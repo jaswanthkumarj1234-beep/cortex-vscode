@@ -1,0 +1,222 @@
+{
+    "name": "cortex-memory",
+    "displayName": "Cortex — AI Memory",
+    "description": "Persistent memory for AI coding assistants. Browse, search, and manage your Cortex memories directly from VS Code.",
+    "version": "1.0.0",
+    "publisher": "cortex",
+    "author": "Perla Jaswanth Kumar",
+    "license": "MIT",
+    "icon": "media/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jaswanthkumarj1234-beep/cortex-vscode.git"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "AI",
+        "Other",
+        "Machine Learning"
+    ],
+    "keywords": [
+        "cortex",
+        "memory",
+        "ai",
+        "mcp",
+        "context",
+        "persistent-memory",
+        "coding-assistant"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "cortex-memory",
+                    "title": "Cortex Memory",
+                    "icon": "media/brain.svg"
+                }
+            ]
+        },
+        "views": {
+            "cortex-memory": [
+                {
+                    "id": "cortexMemoryTree",
+                    "name": "Memories",
+                    "icon": "media/brain.svg"
+                },
+                {
+                    "id": "cortexStatsView",
+                    "name": "Stats",
+                    "type": "webview"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "cortexMemoryTree",
+                "contents": "Welcome to Cortex! 🧠\nYour AI coding assistant's persistent memory.\n\n[Run Setup Wizard](command:cortex.setup)\n\nThis will install cortex-mcp and connect automatically.\n\n[Learn More](command:cortex.openWalkthrough)"
+            }
+        ],
+        "walkthroughs": [
+            {
+                "id": "cortex.gettingStarted",
+                "title": "Get Started with Cortex",
+                "description": "Set up persistent AI memory in 4 easy steps.",
+                "steps": [
+                    {
+                        "id": "cortex.step.install",
+                        "title": "Install Cortex MCP",
+                        "description": "Cortex needs the MCP server to store and recall memories. Click below to install it globally.\n\n[Install cortex-mcp](command:cortex.setup)",
+                        "media": {
+                            "markdown": "media/walkthrough/install.md"
+                        }
+                    },
+                    {
+                        "id": "cortex.step.connect",
+                        "title": "Connect to Memory Server",
+                        "description": "Once installed, Cortex auto-connects on startup. Check the status bar at the bottom — you should see '🧠 Cortex: X memories'.\n\n[Check Connection](command:cortex.viewStats)",
+                        "media": {
+                            "markdown": "media/walkthrough/connect.md"
+                        }
+                    },
+                    {
+                        "id": "cortex.step.scan",
+                        "title": "Scan Your Project",
+                        "description": "Give Cortex a head start! Scan your project to capture its stack, structure, and recent git history into memory.\n\n[Scan Project](command:cortex.scanProject)",
+                        "media": {
+                            "markdown": "media/walkthrough/scan.md"
+                        }
+                    },
+                    {
+                        "id": "cortex.step.store",
+                        "title": "Store Your First Memory",
+                        "description": "Try storing a decision, convention, or bug fix. This memory will persist across all future sessions.\n\n[Store a Memory](command:cortex.storeMemory)",
+                        "media": {
+                            "markdown": "media/walkthrough/store.md"
+                        }
+                    }
+                ]
+            }
+        ],
+        "commands": [
+            {
+                "command": "cortex.storeMemory",
+                "title": "Cortex: Store Memory",
+                "icon": "$(add)"
+            },
+            {
+                "command": "cortex.recallMemory",
+                "title": "Cortex: Recall Memory",
+                "icon": "$(search)"
+            },
+            {
+                "command": "cortex.searchMemories",
+                "title": "Cortex: Search Memories",
+                "icon": "$(search-fuzzy)"
+            },
+            {
+                "command": "cortex.viewStats",
+                "title": "Cortex: View Stats",
+                "icon": "$(graph)"
+            },
+            {
+                "command": "cortex.scanProject",
+                "title": "Cortex: Scan Project",
+                "icon": "$(sync)"
+            },
+            {
+                "command": "cortex.exportMemories",
+                "title": "Cortex: Export Memories",
+                "icon": "$(export)"
+            },
+            {
+                "command": "cortex.openDashboard",
+                "title": "Cortex: Open Dashboard",
+                "icon": "$(dashboard)"
+            },
+            {
+                "command": "cortex.refreshMemories",
+                "title": "Cortex: Refresh Memories",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "cortex.deleteMemory",
+                "title": "Delete Memory",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "cortex.setup",
+                "title": "Cortex: Setup Wizard",
+                "icon": "$(wand)"
+            },
+            {
+                "command": "cortex.openWalkthrough",
+                "title": "Cortex: Getting Started Guide",
+                "icon": "$(book)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "cortex.storeMemory",
+                    "when": "view == cortexMemoryTree",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cortex.refreshMemories",
+                    "when": "view == cortexMemoryTree",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cortex.searchMemories",
+                    "when": "view == cortexMemoryTree",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "cortex.deleteMemory",
+                    "when": "view == cortexMemoryTree && viewItem == memory",
+                    "group": "inline"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Cortex Memory",
+            "properties": {
+                "cortex.autoStart": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically start the Cortex MCP server on extension activation."
+                },
+                "cortex.mcpCommand": {
+                    "type": "string",
+                    "default": "npx cortex-mcp",
+                    "description": "Command to run the Cortex MCP server."
+                },
+                "cortex.showStatusBar": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show Cortex memory count in the status bar."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "build": "npm run compile",
+        "package": "vsce package",
+        "lint": "eslint src --ext ts"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/vscode": "^1.85.0",
+        "typescript": "^5.3.0"
+    }
+}
