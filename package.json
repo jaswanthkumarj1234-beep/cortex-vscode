@@ -59,7 +59,7 @@
         "viewsWelcome": [
             {
                 "view": "cortexMemoryTree",
-                "contents": "Welcome to Cortex! 🧠\nYour AI coding assistant's persistent memory.\n\n[Run Setup Wizard](command:cortex.setup)\n\nThis will install cortex-mcp and connect automatically.\n\n[Learn More](command:cortex.openWalkthrough)"
+                "contents": "Welcome to Cortex! 🧠\nYour AI coding assistant's persistent memory.\n\n[Sign In with Google](command:cortex.login)\n\n[Enter License Key](command:cortex.enterKey)\n\n[Run Setup Wizard](command:cortex.setup)\n\n[Learn More](command:cortex.openWalkthrough)"
             }
         ],
         "walkthroughs": [
@@ -158,6 +158,26 @@
                 "command": "cortex.openWalkthrough",
                 "title": "Cortex: Getting Started Guide",
                 "icon": "$(book)"
+            },
+            {
+                "command": "cortex.login",
+                "title": "Cortex: Sign In",
+                "icon": "$(sign-in)"
+            },
+            {
+                "command": "cortex.logout",
+                "title": "Cortex: Sign Out",
+                "icon": "$(sign-out)"
+            },
+            {
+                "command": "cortex.enterKey",
+                "title": "Cortex: Enter License Key",
+                "icon": "$(key)"
+            },
+            {
+                "command": "cortex.upgrade",
+                "title": "Cortex: Upgrade to Pro",
+                "icon": "$(star-full)"
             }
         ],
         "menus": {

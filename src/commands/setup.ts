@@ -89,11 +89,31 @@ export async function runSetupWizard(): Promise<boolean> {
                 }
             }
 
-            progress.report({ message: `✅ cortex-mcp ${cortexCheck.detail || 'installed'}`, increment: 25 });
+            progress.report({ message: `✅ cortex-mcp ${cortexCheck.detail || 'installed'}`, increment: 20 });
 
             if (token.isCancellationRequested) { return false; }
 
-            // Step 3: Verify connection
+            // Step 3: Sign in for trial
+            progress.report({ message: 'Setting up your account…', increment: 0 });
+
+            const authAction = await vscode.window.showInformationMessage(
+                '🔑 Sign in to activate your 7-day free trial with all PRO features.',
+                'Sign In with Google',
+                'Enter License Key',
+                'Skip (Free Plan)'
+            );
+
+            if (authAction === 'Sign In with Google') {
+                await vscode.commands.executeCommand('cortex.login');
+            } else if (authAction === 'Enter License Key') {
+                await vscode.commands.executeCommand('cortex.enterKey');
+            }
+
+            progress.report({ message: '✅ Account configured', increment: 20 });
+
+            if (token.isCancellationRequested) { return false; }
+
+            // Step 4: Verify connection
             progress.report({ message: 'Connecting to Cortex MCP server…', increment: 0 });
             await new Promise(resolve => setTimeout(resolve, 2000));
             progress.report({ message: '✅ Connected', increment: 25 });
