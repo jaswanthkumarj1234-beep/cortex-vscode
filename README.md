@@ -1,6 +1,6 @@
-# 🧠 Cortex — Persistent AI Memory for VS Code
+# Cortex — Persistent AI Memory for VS Code
 
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=cortex.cortex-memory)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=cortex-ai-memory.cortex-memory)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **Your AI forgets everything between sessions. Cortex fixes that.**
@@ -9,7 +9,7 @@ Cortex gives AI coding assistants (Cursor, Claude, Copilot) persistent memory �
 
 ---
 
-## ✨ Why Cortex?
+## Why Cortex?
 
 | Problem | How Cortex Solves It |
 |---------|---------------------|
@@ -20,7 +20,7 @@ Cortex gives AI coding assistants (Cursor, Claude, Copilot) persistent memory �
 
 ---
 
-## 🚀 Features
+## Features
 
 ### Zero-Install Server
 Cortex bundles its own MCP server — **no `npm install` needed**. Just install the extension and it works.
@@ -29,7 +29,7 @@ Cortex bundles its own MCP server — **no `npm install` needed**. Just install 
 Browse all your memories organized by type: Decisions, Bug Fixes, Corrections, Conventions, and Insights.
 
 ### Smart Dashboard
-Premium Apple-style dashboard showing memory stats, quick actions, and memory breakdown — with full light/dark mode support.
+A clean, responsive dashboard showing memory stats, quick actions, and memory breakdown with full light and dark mode support.
 
 ### 16 MCP Tools
 | Tool | What It Does |
@@ -37,8 +37,8 @@ Premium Apple-style dashboard showing memory stats, quick actions, and memory br
 | `force_recall` | 12-layer brain recall at conversation start |
 | `auto_learn` | Passively learns from every response |
 | `recall_memory` | Hybrid FTS + vector search |
-| `store_memory` | Store with quality gates + dedup |
-| `verify_code` | Catch hallucinated imports/exports |
+| `store_memory` | Store with quality gates and dedup |
+| `verify_code` | Catch hallucinated imports and exports |
 | `verify_files` | Catch hallucinated file paths |
 | `scan_project` | Day-1 project understanding |
 | `quick_store` | One-sentence memory store |
@@ -46,9 +46,9 @@ Premium Apple-style dashboard showing memory stats, quick actions, and memory br
 
 ### Anti-Hallucination
 Cortex checks AI-generated code against your real codebase:
-- ✅ Are imported packages in `package.json`?
-- ✅ Are imported functions actually exported?
-- ✅ Are referenced env variables in `.env`?
+- Are imported packages in `package.json`?
+- Are imported functions actually exported?
+- Are referenced env variables in `.env`?
 
 ### CodeLens Integration
 See memory counts directly in your editor — know which files have related corrections, conventions, or insights.
@@ -61,7 +61,7 @@ Get alerted when you save a file that has critical memories (bug fixes, correcti
 
 ---
 
-## 📋 Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
@@ -78,7 +78,7 @@ Get alerted when you save a file that has critical memories (bug fixes, correcti
 
 ---
 
-## ⚙️ Settings
+## Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -88,22 +88,22 @@ Get alerted when you save a file that has critical memories (bug fixes, correcti
 
 ---
 
-## 💰 Pricing
+## Pricing
 
 | | Free | Pro |
 |---|------|-----|
 | Memories | 20 | Unlimited |
-| Basic recall | ✅ | ✅ |
-| 12-layer brain | ❌ | ✅ |
-| Auto-learn | ❌ | ✅ |
-| Anti-hallucination | ✅ | ✅ |
-| Git memory | ❌ | ✅ |
-| Confidence decay | ❌ | ✅ |
-| Memory consolidation | ❌ | ✅ |
+| Basic recall | Yes | Yes |
+| 12-layer brain | — | Yes |
+| Auto-learn | — | Yes |
+| Anti-hallucination | Yes | Yes |
+| Git memory | — | Yes |
+| Confidence decay | — | Yes |
+| Memory consolidation | — | Yes |
 
 ---
 
-## 🔒 Privacy & Security
+## Privacy and Security
 
 - All memories stored **locally** on your machine (SQLite)
 - No code leaves your computer
@@ -112,7 +112,7 @@ Get alerted when you save a file that has critical memories (bug fixes, correcti
 
 ---
 
-## 🛠 Development
+## Development
 
 ```bash
 git clone https://github.com/jaswanthkumarj1234-beep/cortex-vscode.git
@@ -124,7 +124,7 @@ npm run compile
 
 ---
 
-## 📖 Links
+## Links
 
 - [Website](https://cortex-website-theta.vercel.app)
 - [Documentation](https://cortex-website-theta.vercel.app/docs.html)
@@ -133,4 +133,4 @@ npm run compile
 
 ---
 
-**Made with ❤️ by [Perla Jaswanth Kumar](https://github.com/jaswanthkumarj1234-beep)**
+**Made by [Perla Jaswanth Kumar](https://github.com/jaswanthkumarj1234-beep)**

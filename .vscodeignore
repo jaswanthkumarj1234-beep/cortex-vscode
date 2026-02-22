@@ -11,3 +11,4 @@ vsc-extension-quickstart.md
 **/*.ts
 !server/**
 node_modules/**
+upload-release.js
