@@ -1,6 +1,3 @@
-/**
- * Status Bar Provider — Shows Cortex connection status, memory count, and plan.
- */
 import * as vscode from 'vscode';
 
 type Plan = 'FREE' | 'TRIAL' | 'PRO';
@@ -40,7 +37,6 @@ export class StatusBarProvider {
         this.statusBarItem.backgroundColor = undefined;
     }
 
-    /** Show plan-aware connected state */
     setConnectedWithPlan(memoryCount: number, plan: Plan, trialDaysLeft: number | null): void {
         const planBadge = this.getPlanBadge(plan, trialDaysLeft);
         this.statusBarItem.text = `$(brain) Cortex: ${memoryCount} memories ${planBadge}`;
@@ -54,7 +50,6 @@ export class StatusBarProvider {
         }
     }
 
-    /** Show plan without connection (pre-connect state) */
     setPlan(plan: Plan, trialDaysLeft: number | null): void {
         const planBadge = this.getPlanBadge(plan, trialDaysLeft);
         this.statusBarItem.text = `$(brain) Cortex ${planBadge}`;
@@ -62,7 +57,6 @@ export class StatusBarProvider {
         this.statusBarItem.backgroundColor = undefined;
     }
 
-    /** Show free plan state */
     setFree(): void {
         this.statusBarItem.text = '$(brain) Cortex: Free';
         this.statusBarItem.tooltip = 'Cortex Free Plan — 20 memories, basic features\nClick to upgrade';
@@ -85,8 +79,6 @@ export class StatusBarProvider {
     dispose(): void {
         this.statusBarItem.dispose();
     }
-
-    // ── Private helpers ────────────────────────────────────────────────
 
     private getPlanBadge(plan: Plan, trialDaysLeft: number | null): string {
         switch (plan) {

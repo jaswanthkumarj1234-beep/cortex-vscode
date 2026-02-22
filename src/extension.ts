@@ -1,55 +1,104 @@
-/**
- * Cortex VS Code Extension — Entry Point
- * 
- * Provides a sidebar memory browser, status bar indicator, and commands
- * to interact with the Cortex MCP persistent memory server.
- * 
- * Includes Google OAuth authentication, license management, and
- * feature gating for FREE/TRIAL/PRO plans.
- */
 import * as vscode from 'vscode';
 import { MCPClient } from './mcp-client';
 import { MemoryTreeProvider } from './providers/memory-tree';
 import { StatusBarProvider } from './providers/status-bar';
-import { registerCommands } from './commands/commands';
-import { DashboardPanel } from './webview/dashboard';
-import { runSetupWizard } from './commands/setup';
+import { StatsWebviewProvider } from './providers/stats-webview';
+import { CortexCodeLensProvider } from './providers/codelens-provider';
+import { InlineAnnotationProvider } from './providers/inline-annotations';
+import { FileWatcher } from './providers/file-watcher';
 import { AuthProvider } from './auth/auth-provider';
-import { LicenseSync } from './auth/license-sync';
+import { DashboardPanel } from './webview/dashboard';
+import { registerCommands } from './commands/commands';
 import { registerLoginCommands } from './commands/login';
+import { runSetupWizard } from './commands/setup';
 
 let client: MCPClient;
 let treeProvider: MemoryTreeProvider;
 let statusBar: StatusBarProvider;
 let authProvider: AuthProvider;
+let codeLensProvider: CortexCodeLensProvider;
+let inlineAnnotations: InlineAnnotationProvider;
+let fileWatcher: FileWatcher;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     console.log('[Cortex] Extension activating…');
 
-    // Determine workspace root
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
 
-    // Initialize core components
     client = new MCPClient(workspaceRoot);
+    client.setExtensionPath(context.extensionPath);
     treeProvider = new MemoryTreeProvider(client);
     statusBar = new StatusBarProvider();
     authProvider = new AuthProvider(context);
 
-    // ── URI Handler — Receives OAuth callback ──────────────────────────
+    const treeView = vscode.window.createTreeView('cortexMemoryTree', {
+        treeDataProvider: treeProvider,
+        showCollapseAll: true,
+    });
+    context.subscriptions.push(treeView);
+
+    const statsProvider = new StatsWebviewProvider(client);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('cortexStatsView', statsProvider)
+    );
+
+    codeLensProvider = new CortexCodeLensProvider(client);
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider({ scheme: 'file' }, codeLensProvider)
+    );
+
+    inlineAnnotations = new InlineAnnotationProvider(client);
+    context.subscriptions.push(inlineAnnotations);
+
+    fileWatcher = new FileWatcher(client);
+    context.subscriptions.push(fileWatcher);
+
+    registerCommands(context, client, treeProvider);
+    registerLoginCommands(context, authProvider);
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cortex.setup', async () => {
+            const success = await runSetupWizard();
+            if (success && !client.connected) {
+                try { await client.start(); } catch (_e) { }
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cortex.openDashboard', async () => {
+            if (!client.connected) {
+                vscode.window.showWarningMessage('Cortex is not connected. Run setup first.', 'Setup').then(a => {
+                    if (a === 'Setup') { vscode.commands.executeCommand('cortex.setup'); }
+                });
+                return;
+            }
+            await DashboardPanel.createOrShow(client);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cortex.openWalkthrough', () => {
+            vscode.commands.executeCommand(
+                'workbench.action.openWalkthrough',
+                'cortex.cortex-memory#cortex.gettingStarted',
+                true
+            );
+        })
+    );
+
     context.subscriptions.push(
         vscode.window.registerUriHandler({
             handleUri: async (uri: vscode.Uri) => {
                 if (uri.path === '/auth/callback') {
                     const success = await authProvider.handleCallback(uri);
                     if (success) {
-                        // Refresh license status after login
                         const profile = await authProvider.getProfile();
                         if (profile) {
                             statusBar.setPlan(profile.plan, profile.trial_days_left);
                         }
-                        // Reconnect MCP if not connected
                         if (!client.connected) {
-                            try { await client.start(); } catch { /* handled below */ }
+                            try { await client.start(); } catch (_e) { }
                         }
                     }
                 }
@@ -57,182 +106,100 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Register tree view
-    const treeView = vscode.window.createTreeView('cortexMemoryTree', {
-        treeDataProvider: treeProvider,
-        showCollapseAll: true,
-    });
-    context.subscriptions.push(treeView);
+    client.on('connecting', () => statusBar.setConnecting());
 
-    // Register all commands
-    registerCommands(context, client, treeProvider);
-    registerLoginCommands(context, authProvider);
-
-    // Register dashboard command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('cortex.openDashboard', async () => {
-            await DashboardPanel.createOrShow(client);
-        })
-    );
-
-    // Register setup wizard
-    context.subscriptions.push(
-        vscode.commands.registerCommand('cortex.setup', async () => {
-            const success = await runSetupWizard();
-            if (success && !client.connected) {
-                try {
-                    await client.start();
-                } catch { /* handled by event listeners */ }
-            }
-        })
-    );
-
-    // Register walkthrough opener
-    context.subscriptions.push(
-        vscode.commands.registerCommand('cortex.openWalkthrough', () => {
-            vscode.commands.executeCommand(
-                'workbench.action.openWalkthrough',
-                'cortex.cortex-memory#cortex.gettingStarted',
-                false
-            );
-        })
-    );
-
-    // ── First Run Detection ────────────────────────────────────────────
-    const hasRunBefore = context.globalState.get<boolean>('cortex.hasRunBefore', false);
-    if (!hasRunBefore) {
-        context.globalState.update('cortex.hasRunBefore', true);
-        setTimeout(() => {
-            vscode.commands.executeCommand(
-                'workbench.action.openWalkthrough',
-                'cortex.cortex-memory#cortex.gettingStarted',
-                false
-            );
-        }, 2000);
-    }
-
-    // ── License Check on Startup ───────────────────────────────────────
-    const profile = await authProvider.getProfile();
-    if (profile) {
-        statusBar.setPlan(profile.plan, profile.trial_days_left);
-
-        // Trial expiry warning
-        if (profile.plan === 'TRIAL' && profile.trial_days_left !== null) {
-            if (profile.trial_days_left <= 2 && profile.trial_days_left > 0) {
-                vscode.window.showWarningMessage(
-                    `Your Cortex trial ends in ${profile.trial_days_left} day(s). Upgrade to keep all features.`,
-                    'Upgrade to Pro'
-                ).then(action => {
-                    if (action === 'Upgrade to Pro') {
-                        vscode.commands.executeCommand('cortex.upgrade');
-                    }
-                });
-            } else if (profile.trial_days_left <= 0) {
-                vscode.window.showWarningMessage(
-                    'Your Cortex trial has expired. You\'re now on the Free plan (20 memories, basic features).',
-                    'Upgrade to Pro', 'OK'
-                ).then(action => {
-                    if (action === 'Upgrade to Pro') {
-                        vscode.commands.executeCommand('cortex.upgrade');
-                    }
-                });
-            }
-        }
-    } else if (!LicenseSync.hasKey()) {
-        // No profile AND no local key — prompt to sign in
-        statusBar.setFree();
-    }
-
-    // Show status bar
-    statusBar.show();
-    context.subscriptions.push(statusBar);
-    context.subscriptions.push(authProvider);
-
-    // ── MCP Client Event Handlers ──────────────────────────────────────
-    client.on('connected', () => {
-        statusBar.setConnecting();
-    });
-
-    client.on('initialized', async () => {
+    client.on('connected', async () => {
         await treeProvider.loadMemories();
-        const currentProfile = await authProvider.getProfile();
-        if (currentProfile) {
+        const profile = await authProvider.getProfile();
+        if (profile) {
             statusBar.setConnectedWithPlan(
                 treeProvider.getMemoryCount(),
-                currentProfile.plan,
-                currentProfile.trial_days_left,
+                profile.plan,
+                profile.trial_days_left
             );
         } else {
             statusBar.setConnected(treeProvider.getMemoryCount());
         }
     });
 
-    client.on('disconnected', () => {
-        statusBar.setDisconnected();
+    client.on('disconnected', () => statusBar.setDisconnected());
+    client.on('reconnectFailed', () => {
+        statusBar.setError('Reconnection failed');
+        vscode.window.showWarningMessage(
+            'Cortex MCP server disconnected. Check the setup.',
+            'Run Setup'
+        ).then(a => {
+            if (a === 'Run Setup') { vscode.commands.executeCommand('cortex.setup'); }
+        });
     });
-
-    client.on('error', (err: Error) => {
-        statusBar.setError(err.message);
+    client.on('reconnected', async () => {
+        await treeProvider.loadMemories();
+        statusBar.setConnected(treeProvider.getMemoryCount());
+        vscode.window.showInformationMessage('Cortex reconnected successfully.');
     });
+    client.on('error', (err: Error) => statusBar.setError(err.message));
 
-    // Auth state changes → update status bar
-    authProvider.onDidChangeAuth(async (newProfile) => {
-        if (newProfile) {
-            statusBar.setPlan(newProfile.plan, newProfile.trial_days_left);
+    authProvider.onDidChangeAuth(async (profile) => {
+        if (profile) {
+            statusBar.setPlan(profile.plan, profile.trial_days_left);
         } else {
             statusBar.setFree();
         }
     });
 
-    // Auto-start if configured  
-    const config = vscode.workspace.getConfiguration('cortex');
-    if (config.get<boolean>('autoStart', true)) {
-        statusBar.setConnecting();
-        try {
-            await client.start();
-        } catch (err: any) {
-            statusBar.setError(err.message);
+    statusBar.show();
+
+    const hasSeenWalkthrough = context.globalState.get<boolean>('cortex.hasSeenWalkthrough');
+    if (!hasSeenWalkthrough) {
+        await context.globalState.update('cortex.hasSeenWalkthrough', true);
+        const action = await vscode.window.showInformationMessage(
+            '🧠 Welcome to Cortex! Set up persistent AI memory in minutes.',
+            'Setup Wizard', 'Learn More', 'Later'
+        );
+        if (action === 'Setup Wizard') {
+            await vscode.commands.executeCommand('cortex.setup');
+        } else if (action === 'Learn More') {
+            await vscode.commands.executeCommand('cortex.openWalkthrough');
+        }
+    }
+
+    const profile = await authProvider.getProfile();
+    if (profile) {
+        statusBar.setPlan(profile.plan, profile.trial_days_left);
+
+        if (profile.plan === 'TRIAL' && profile.trial_days_left !== null && profile.trial_days_left <= 2) {
             vscode.window.showWarningMessage(
-                `Cortex: Failed to connect — ${err.message}. Make sure cortex-mcp is installed: npm install -g cortex-mcp`,
-                'Retry', 'Install'
-            ).then(action => {
-                if (action === 'Retry') {
-                    client.start().catch(() => { });
-                } else if (action === 'Install') {
-                    const terminal = vscode.window.createTerminal('Cortex Install');
-                    terminal.sendText('npm install -g cortex-mcp');
-                    terminal.show();
-                }
+                `⏳ Your Cortex trial expires in ${profile.trial_days_left} day(s). Upgrade to keep all features.`,
+                'Upgrade Now'
+            ).then(a => {
+                if (a === 'Upgrade Now') { vscode.commands.executeCommand('cortex.upgrade'); }
             });
         }
     }
 
-    // Auto-refresh on workspace change
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-            if (client.connected) {
-                await treeProvider.loadMemories();
-                statusBar.setConnected(treeProvider.getMemoryCount());
-            }
-        })
-    );
+    const config = vscode.workspace.getConfiguration('cortex');
+    if (config.get<boolean>('autoStart', true)) {
+        try {
+            await client.start();
+        } catch (err: any) {
+            console.log('[Cortex] Auto-start failed:', err.message);
+        }
+    }
 
-    // Periodic refresh every 60 seconds
     const refreshInterval = setInterval(async () => {
         if (client.connected) {
-            await treeProvider.loadMemories();
-            statusBar.setConnected(treeProvider.getMemoryCount());
+            try { await treeProvider.loadMemories(); } catch (_e) { }
         }
-    }, 60000);
-
+    }, 5 * 60 * 1000);
     context.subscriptions.push({ dispose: () => clearInterval(refreshInterval) });
 
-    console.log('[Cortex] Extension activated successfully');
+    context.subscriptions.push(client);
+    context.subscriptions.push(statusBar);
+    context.subscriptions.push(authProvider);
+
+    console.log('[Cortex] Extension activated');
 }
 
 export function deactivate(): void {
-    console.log('[Cortex] Extension deactivating…');
-    client?.dispose();
-    statusBar?.dispose();
-    authProvider?.dispose();
+    client?.stop();
 }

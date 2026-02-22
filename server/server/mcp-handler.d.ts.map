@@ -1,0 +1,1 @@
+{"version":3,"file":"mcp-handler.d.ts","sourceRoot":"","sources":["../../src/server/mcp-handler.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AACH,OAAO,EAAE,WAAW,EAAE,MAAM,oBAAoB,CAAC;AACjD,OAAO,EAAE,QAAQ,EAAE,MAAM,iBAAiB,CAAC;AAgQ3C,wBAAgB,gBAAgB,CAAC,WAAW,EAAE,WAAW,EAAE,QAAQ,EAAE,QAAQ,EAAE,aAAa,CAAC,EAAE,MAAM;4BAC5D,GAAG,KAAG,OAAO,CAAC,GAAG,CAAC;EAsqC1D"}

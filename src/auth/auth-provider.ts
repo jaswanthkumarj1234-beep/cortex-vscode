@@ -1,12 +1,3 @@
-/**
- * Auth Provider — Handles Google OAuth login from VS Code.
- * 
- * Flow:
- * 1. User clicks "Sign in with Google"
- * 2. Opens browser → cortex-website/api/auth/google?redirect=vscode
- * 3. After OAuth, callback redirects to vscode://cortex.cortex-memory/auth/callback?token=JWT&key=CORTEX-...
- * 4. URI handler receives token + key → stores in SecretStorage + ~/.cortex/license
- */
 import * as vscode from 'vscode';
 import * as https from 'https';
 
@@ -37,7 +28,6 @@ export class AuthProvider implements vscode.Disposable {
         this.secrets = context.secrets;
     }
 
-    /** Start Google OAuth login flow */
     async login(): Promise<boolean> {
         const loginUrl = `${API_BASE}/api/auth/google?redirect=vscode`;
         await vscode.env.openExternal(vscode.Uri.parse(loginUrl));
@@ -49,7 +39,6 @@ export class AuthProvider implements vscode.Disposable {
         return true;
     }
 
-    /** Handle URI callback from OAuth: vscode://cortex.cortex-memory/auth/callback?token=...&key=... */
     async handleCallback(uri: vscode.Uri): Promise<boolean> {
         const params = new URLSearchParams(uri.query);
         const token = params.get('token');
@@ -60,16 +49,13 @@ export class AuthProvider implements vscode.Disposable {
             return false;
         }
 
-        // Store JWT
         await this.secrets.store(AuthProvider.SESSION_KEY, token);
 
-        // If key provided, write to disk
         if (key) {
             const { LicenseSync } = await import('./license-sync');
             LicenseSync.writeKey(key);
         }
 
-        // Fetch full profile
         const profile = await this.fetchProfile(token);
         if (profile) {
             this.profile = profile;
@@ -84,7 +70,6 @@ export class AuthProvider implements vscode.Disposable {
         return false;
     }
 
-    /** Log out — clear stored credentials */
     async logout(): Promise<void> {
         await this.secrets.delete(AuthProvider.SESSION_KEY);
         await this.context.globalState.update(AuthProvider.PROFILE_KEY, undefined);
@@ -97,18 +82,15 @@ export class AuthProvider implements vscode.Disposable {
         vscode.window.showInformationMessage('Signed out of Cortex.');
     }
 
-    /** Get current profile (from cache or API) */
     async getProfile(): Promise<UserProfile | null> {
         if (this.profile) { return this.profile; }
 
-        // Try globalState cache first
         const cached = this.context.globalState.get<UserProfile>(AuthProvider.PROFILE_KEY);
         if (cached) {
             this.profile = cached;
             return cached;
         }
 
-        // Try stored JWT
         const token = await this.secrets.get(AuthProvider.SESSION_KEY);
         if (!token) { return null; }
 
@@ -120,13 +102,11 @@ export class AuthProvider implements vscode.Disposable {
         return profile;
     }
 
-    /** Check if user is logged in */
     async isLoggedIn(): Promise<boolean> {
         const token = await this.secrets.get(AuthProvider.SESSION_KEY);
         return !!token;
     }
 
-    /** Fetch profile from /api/auth/me */
     private fetchProfile(token: string): Promise<UserProfile | null> {
         return new Promise((resolve) => {
             const url = new URL(`${API_BASE}/api/auth/me`);
@@ -145,7 +125,7 @@ export class AuthProvider implements vscode.Disposable {
                         const json = JSON.parse(data);
                         if (json.error) { resolve(null); return; }
                         resolve(json as UserProfile);
-                    } catch { resolve(null); }
+                    } catch (_e) { resolve(null); }
                 });
             });
             req.on('error', () => resolve(null));

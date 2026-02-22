@@ -1,6 +1,3 @@
-/**
- * Login Commands — Sign in, sign out, enter key, upgrade.
- */
 import * as vscode from 'vscode';
 import { AuthProvider } from '../auth/auth-provider';
 import { LicenseSync } from '../auth/license-sync';
@@ -12,7 +9,6 @@ export function registerLoginCommands(
     context: vscode.ExtensionContext,
     authProvider: AuthProvider,
 ): void {
-    // Sign In
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.login', async () => {
             const loggedIn = await authProvider.isLoggedIn();
@@ -31,7 +27,6 @@ export function registerLoginCommands(
         })
     );
 
-    // Sign Out
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.logout', async () => {
             const confirm = await vscode.window.showWarningMessage(
@@ -45,7 +40,6 @@ export function registerLoginCommands(
         })
     );
 
-    // Enter License Key Manually
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.enterKey', async () => {
             const existingKey = LicenseSync.readKey();
@@ -79,7 +73,6 @@ export function registerLoginCommands(
         })
     );
 
-    // Upgrade to Pro
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.upgrade', async () => {
             const loggedIn = await authProvider.isLoggedIn();

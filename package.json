@@ -1,12 +1,16 @@
 {
     "name": "cortex-memory",
     "displayName": "Cortex — AI Memory",
-    "description": "Persistent memory for AI coding assistants. Browse, search, and manage your Cortex memories directly from VS Code.",
-    "version": "1.0.0",
+    "description": "Persistent memory for AI coding assistants. Browse, search, and manage your Cortex memories directly from VS Code. Bundled server — no npm install needed.",
+    "version": "1.1.0",
     "publisher": "cortex",
     "author": "Perla Jaswanth Kumar",
     "license": "MIT",
     "icon": "media/icon.png",
+    "galleryBanner": {
+        "color": "#1a1a2e",
+        "theme": "dark"
+    },
     "repository": {
         "type": "git",
         "url": "https://github.com/jaswanthkumarj1234-beep/cortex-vscode.git"
@@ -26,7 +30,8 @@
         "mcp",
         "context",
         "persistent-memory",
-        "coding-assistant"
+        "coding-assistant",
+        "anti-hallucination"
     ],
     "activationEvents": [
         "onStartupFinished"
@@ -117,7 +122,7 @@
             {
                 "command": "cortex.searchMemories",
                 "title": "Cortex: Search Memories",
-                "icon": "$(search-fuzzy)"
+                "icon": "$(list-filter)"
             },
             {
                 "command": "cortex.viewStats",
@@ -132,12 +137,17 @@
             {
                 "command": "cortex.exportMemories",
                 "title": "Cortex: Export Memories",
-                "icon": "$(export)"
+                "icon": "$(arrow-up)"
+            },
+            {
+                "command": "cortex.importMemories",
+                "title": "Cortex: Import Memories",
+                "icon": "$(arrow-down)"
             },
             {
                 "command": "cortex.openDashboard",
                 "title": "Cortex: Open Dashboard",
-                "icon": "$(dashboard)"
+                "icon": "$(graph-line)"
             },
             {
                 "command": "cortex.refreshMemories",
@@ -150,9 +160,14 @@
                 "icon": "$(trash)"
             },
             {
+                "command": "cortex.showFileMemories",
+                "title": "Cortex: Show File Memories",
+                "icon": "$(library)"
+            },
+            {
                 "command": "cortex.setup",
                 "title": "Cortex: Setup Wizard",
-                "icon": "$(wand)"
+                "icon": "$(zap)"
             },
             {
                 "command": "cortex.openWalkthrough",
@@ -201,8 +216,20 @@
             "view/item/context": [
                 {
                     "command": "cortex.deleteMemory",
-                    "when": "view == cortexMemoryTree && viewItem == memory",
+                    "when": "view == cortexMemoryTree && viewItem == memoryItem",
                     "group": "inline"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "cortex.showFileMemories",
+                    "when": "editorTextFocus",
+                    "group": "cortex"
+                },
+                {
+                    "command": "cortex.storeMemory",
+                    "when": "editorTextFocus",
+                    "group": "cortex"
                 }
             ]
         },
@@ -217,12 +244,22 @@
                 "cortex.mcpCommand": {
                     "type": "string",
                     "default": "npx cortex-mcp",
-                    "description": "Command to run the Cortex MCP server."
+                    "description": "Command to run the Cortex MCP server. Leave default to use bundled server with npx fallback."
                 },
                 "cortex.showStatusBar": {
                     "type": "boolean",
                     "default": true,
                     "description": "Show Cortex memory count in the status bar."
+                },
+                "cortex.enableCodeLens": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show memory count CodeLens annotations at the top of files."
+                },
+                "cortex.enableInlineAnnotations": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show inline corrections and conventions as editor decorations."
                 }
             }
         }
@@ -231,12 +268,15 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "build": "npm run compile",
+        "test": "npm run compile && npx mocha dist/test/extension.test.js --exit --timeout 10000",
         "package": "vsce package",
         "lint": "eslint src --ext ts"
     },
     "devDependencies": {
+        "@types/mocha": "^10.0.10",
         "@types/node": "^20.11.0",
         "@types/vscode": "^1.85.0",
+        "mocha": "^11.7.5",
         "typescript": "^5.3.0"
     }
 }
