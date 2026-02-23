@@ -424,7 +424,7 @@ export class DashboardPanel {
         </div>
 
         <div class="footer">
-            Cortex v1.1.0 · <a href="https://cortex-website-theta.vercel.app">cortex-website</a>
+            Cortex v1.1.0 · <a href="https://cortex-ai-iota.vercel.app">cortex-website</a>
         </div>
     </div>
 

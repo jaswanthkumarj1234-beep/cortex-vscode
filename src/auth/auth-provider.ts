@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
 
-const API_BASE = 'https://cortex-website-theta.vercel.app';
+const API_BASE = 'https://cortex-ai-iota.vercel.app';
 
 export interface UserProfile {
     id: string;

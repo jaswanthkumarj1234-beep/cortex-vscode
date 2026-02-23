@@ -21,7 +21,7 @@ exports.formatPlanStatus = formatPlanStatus;
  * PRO plan:   Everything unlocked, unlimited.
  */
 const license_1 = require("./license");
-const DASHBOARD_URL = `${process.env.CORTEX_API_URL || 'https://cortex-website-theta.vercel.app'}/dashboard`;
+const DASHBOARD_URL = `${process.env.CORTEX_API_URL || 'https://cortex-ai-iota.vercel.app'}/dashboard`;
 const FREE_LIMITS = {
     maxMemories: 20,
     brainLayers: false,

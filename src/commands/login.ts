@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { AuthProvider } from '../auth/auth-provider';
 import { LicenseSync } from '../auth/license-sync';
 
-const CHECKOUT_URL = 'https://cortex-website-theta.vercel.app/api/payments/checkout';
-const DASHBOARD_URL = 'https://cortex-website-theta.vercel.app/dashboard';
+const CHECKOUT_URL = 'https://cortex-ai-iota.vercel.app/api/payments/checkout';
+const DASHBOARD_URL = 'https://cortex-ai-iota.vercel.app/dashboard';
 
 export function registerLoginCommands(
     context: vscode.ExtensionContext,

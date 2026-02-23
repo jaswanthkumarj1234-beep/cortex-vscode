@@ -126,9 +126,9 @@ npm run compile
 
 ## Links
 
-- [Website](https://cortex-website-theta.vercel.app)
-- [Documentation](https://cortex-website-theta.vercel.app/docs.html)
-- [Changelog](https://cortex-website-theta.vercel.app/changelog.html)
+- [Website](https://cortex-ai-iota.vercel.app)
+- [Documentation](https://cortex-ai-iota.vercel.app/docs.html)
+- [Changelog](https://cortex-ai-iota.vercel.app/changelog.html)
 - [GitHub](https://github.com/jaswanthkumarj1234-beep/cortex-vscode)
 
 ---
