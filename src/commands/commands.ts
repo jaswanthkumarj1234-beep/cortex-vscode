@@ -210,28 +210,42 @@ export function registerCommands(
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('cortex.scanProject', async () => {
+        vscode.commands.registerCommand('cortex.scanProject', async (options?: { silent?: boolean }) => {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             if (!workspaceRoot) {
-                vscode.window.showWarningMessage('No workspace folder open.');
+                if (!options?.silent) {
+                    vscode.window.showWarningMessage('No workspace folder open.');
+                }
                 return;
             }
 
-            const confirm = await vscode.window.showInformationMessage(
-                'Scan this project to capture its stack, structure, and recent git history?',
-                'Scan', 'Cancel'
-            );
-            if (confirm !== 'Scan') { return; }
+            // Skip confirmation if called silently (e.g. from auto-scan)
+            if (!options?.silent) {
+                const confirm = await vscode.window.showInformationMessage(
+                    'Scan this project to capture its stack, structure, and recent git history?',
+                    'Scan', 'Cancel'
+                );
+                if (confirm !== 'Scan') { return; }
+            }
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Cortex: Scanning project…' },
+                {
+                    location: options?.silent
+                        ? vscode.ProgressLocation.Window
+                        : vscode.ProgressLocation.Notification,
+                    title: 'Cortex: Scanning project…',
+                },
                 async () => {
                     try {
                         await client.callTool('scan_project', { workspaceRoot });
-                        vscode.window.showInformationMessage('✅ Project scanned successfully!');
+                        if (!options?.silent) {
+                            vscode.window.showInformationMessage('✅ Project scanned successfully!');
+                        }
                         await treeProvider.loadMemories();
                     } catch (err: any) {
-                        vscode.window.showErrorMessage(`Scan failed: ${err.message}`);
+                        if (!options?.silent) {
+                            vscode.window.showErrorMessage(`Scan failed: ${err.message}`);
+                        }
                     }
                 }
             );

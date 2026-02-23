@@ -76,12 +76,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             else if (pick.label.includes('Search')) { vscode.commands.executeCommand('cortex.recallMemory'); }
             else if (pick.label.includes('Refresh')) { vscode.commands.executeCommand('cortex.refreshMemories'); }
             else if (pick.label.includes('Settings')) { vscode.commands.executeCommand('workbench.action.openSettings', 'cortex'); }
-            else if (pick.label.includes('Connect')) {
-                try { await client.start(); } catch (_e) {
-                    vscode.window.showErrorMessage('Failed to start Cortex server. Run Setup.', 'Setup').then(a => {
-                        if (a === 'Setup') vscode.commands.executeCommand('cortex.setup');
-                    });
-                }
+            else if (pick.label.includes('Connect')) { vscode.commands.executeCommand('cortex.reconnect'); }
+        })
+    );
+
+    // ─── Reconnect command (1-click, used by status bar + quick actions) ──
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cortex.reconnect', async () => {
+            if (client.connected) { return; }
+            statusBar.setConnecting();
+            try {
+                await client.start();
+            } catch (_e) {
+                statusBar.setDisconnected();
             }
         })
     );
@@ -151,17 +158,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else {
             statusBar.setConnected(treeProvider.getMemoryCount());
         }
+
+        // ─── Auto-scan: scan workspace on first connect ──────────────
+        const scanKey = `cortex.scanned.${workspaceRoot}`;
+        if (!context.globalState.get<boolean>(scanKey)) {
+            await context.globalState.update(scanKey, true);
+            try {
+                await client.callTool('scan_project', { workspaceRoot });
+                await treeProvider.loadMemories();
+            } catch (_e) { /* silent — first-run scan is best-effort */ }
+        }
     });
 
     client.on('disconnected', () => statusBar.setDisconnected());
     client.on('reconnectFailed', () => {
-        statusBar.setError('Reconnection failed');
-        vscode.window.showWarningMessage(
-            'Cortex MCP server disconnected. Check the setup.',
-            'Run Setup'
-        ).then(a => {
-            if (a === 'Run Setup') { vscode.commands.executeCommand('cortex.setup'); }
-        });
+        statusBar.setDisconnected();
+        // Only bother the user if they actually have memories at stake
+        if (treeProvider.getMemoryCount() > 0) {
+            vscode.window.showWarningMessage(
+                'Cortex disconnected. Click status bar to reconnect.',
+            );
+        }
     });
     client.on('reconnected', async () => {
         await treeProvider.loadMemories();

@@ -115,7 +115,9 @@ export class MCPClient extends EventEmitter {
                     this.attemptReconnect();
                 });
 
-                setTimeout(async () => {
+                // Wait for server to be ready (first stdout data), then initialize
+                const initTimeout = setTimeout(async () => {
+                    // Fallback: try initializing even if no stdout yet
                     try {
                         await this.initialize();
                         this._connected = true;
@@ -125,7 +127,26 @@ export class MCPClient extends EventEmitter {
                     } catch (err) {
                         reject(err);
                     }
-                }, 1500);
+                }, 2000);
+
+                // Try to initialize as soon as server writes first output
+                const earlyInit = async () => {
+                    this.process?.stdout?.removeListener('data', earlyInitHandler);
+                    clearTimeout(initTimeout);
+                    // Small delay for server to fully start its JSON-RPC handler
+                    await new Promise(r => setTimeout(r, 200));
+                    try {
+                        await this.initialize();
+                        this._connected = true;
+                        this.reconnectAttempts = 0;
+                        this.emit('connected');
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                const earlyInitHandler = () => earlyInit();
+                this.process?.stdout?.once('data', earlyInitHandler);
 
             } catch (err) {
                 reject(err);
@@ -196,7 +217,7 @@ export class MCPClient extends EventEmitter {
             const timer = setTimeout(() => {
                 this.pending.delete(id);
                 reject(new Error(`Request ${method} timed out`));
-            }, 30000);
+            }, 15000);
 
             this.pending.set(id, { resolve, reject, timer });
 

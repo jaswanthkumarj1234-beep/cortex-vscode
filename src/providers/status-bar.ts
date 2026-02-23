@@ -60,9 +60,10 @@ export class StatusBarProvider {
     }
 
     setDisconnected(): void {
-        this.statusBarItem.text = '$(warning) Cortex: Disconnected';
-        this.statusBarItem.tooltip = 'Cortex MCP server is not running. Click to reconnect.';
+        this.statusBarItem.text = '$(plug) Cortex: Click to connect';
+        this.statusBarItem.tooltip = 'Cortex is disconnected. Click to reconnect.';
         this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        this.statusBarItem.command = 'cortex.reconnect';
     }
 
     setError(message: string): void {

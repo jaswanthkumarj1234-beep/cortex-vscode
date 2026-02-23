@@ -198,6 +198,11 @@
                 "command": "cortex.showQuickActions",
                 "title": "Cortex: Quick Actions",
                 "icon": "$(zap)"
+            },
+            {
+                "command": "cortex.reconnect",
+                "title": "Cortex: Reconnect",
+                "icon": "$(plug)"
             }
         ],
         "menus": {
