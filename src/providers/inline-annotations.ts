@@ -112,10 +112,42 @@ export class InlineAnnotationProvider implements vscode.Disposable {
             const conventions: vscode.DecorationOptions[] = [];
             const insights: vscode.DecorationOptions[] = [];
 
-            let lineOffset = 0;
+            const docText = editor.document.getText();
+            const lines = docText.split('\n');
+            const usedLines = new Set<number>();
+
             for (const mem of memories) {
-                const line = Math.min(lineOffset, editor.document.lineCount - 1);
-                const range = new vscode.Range(line, 0, line, 0);
+                // Find the best matching line by searching for keywords from the memory
+                const keywords = mem.intent.toLowerCase().split(/\s+/)
+                    .filter(w => w.length > 3)
+                    .slice(0, 5);
+
+                let bestLine = -1;
+                let bestScore = 0;
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (usedLines.has(i)) continue;
+                    const lower = lines[i].toLowerCase();
+                    let score = 0;
+                    for (const kw of keywords) {
+                        if (lower.includes(kw)) score++;
+                    }
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestLine = i;
+                    }
+                }
+
+                // Fallback: use first available line if no keyword match
+                if (bestLine < 0) {
+                    for (let i = 0; i < lines.length; i++) {
+                        if (!usedLines.has(i)) { bestLine = i; break; }
+                    }
+                }
+                if (bestLine < 0) continue;
+                usedLines.add(bestLine);
+
+                const range = new vscode.Range(bestLine, 0, bestLine, 0);
                 const shortText = mem.intent.length > 60 ? mem.intent.substring(0, 60) + '…' : mem.intent;
 
                 const hoverMessage = new vscode.MarkdownString();
@@ -139,8 +171,6 @@ export class InlineAnnotationProvider implements vscode.Disposable {
                 } else {
                     insights.push(decoration);
                 }
-
-                lineOffset++;
             }
 
             editor.setDecorations(this.correctionDecorationType, corrections);

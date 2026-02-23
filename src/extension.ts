@@ -56,6 +56,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerCommands(context, client, treeProvider);
     registerLoginCommands(context, authProvider);
 
+    // ─── Quick Actions Menu (status bar click) ──────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cortex.showQuickActions', async () => {
+            const items: vscode.QuickPickItem[] = [
+                { label: '$(graph-line) Open Dashboard', description: 'View memories, stats, and settings' },
+                { label: '$(add) Store a Memory', description: 'Save a decision, convention, or bug fix' },
+                { label: '$(search) Search Memories', description: 'Find a specific memory' },
+                { label: '$(refresh) Refresh', description: 'Reload memories from server' },
+                { label: '$(gear) Settings', description: 'Configure Cortex' },
+            ];
+            if (!client.connected) {
+                items.unshift({ label: '$(plug) Connect', description: 'Start the Cortex MCP server' });
+            }
+            const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Cortex — Quick Actions' });
+            if (!pick) return;
+            if (pick.label.includes('Dashboard')) { vscode.commands.executeCommand('cortex.openDashboard'); }
+            else if (pick.label.includes('Store')) { vscode.commands.executeCommand('cortex.storeMemory'); }
+            else if (pick.label.includes('Search')) { vscode.commands.executeCommand('cortex.recallMemory'); }
+            else if (pick.label.includes('Refresh')) { vscode.commands.executeCommand('cortex.refreshMemories'); }
+            else if (pick.label.includes('Settings')) { vscode.commands.executeCommand('workbench.action.openSettings', 'cortex'); }
+            else if (pick.label.includes('Connect')) {
+                try { await client.start(); } catch (_e) {
+                    vscode.window.showErrorMessage('Failed to start Cortex server. Run Setup.', 'Setup').then(a => {
+                        if (a === 'Setup') vscode.commands.executeCommand('cortex.setup');
+                    });
+                }
+            }
+        })
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.setup', async () => {
             const success = await runSetupWizard();
@@ -68,7 +98,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('cortex.openDashboard', async () => {
             if (!client.connected) {
-                vscode.window.showWarningMessage('Cortex is not connected. Run setup first.', 'Setup').then(a => {
+                vscode.window.showWarningMessage('Cortex is not connected.', 'Connect', 'Setup').then(a => {
+                    if (a === 'Connect') { client.start().catch(() => { }); }
                     if (a === 'Setup') { vscode.commands.executeCommand('cortex.setup'); }
                 });
                 return;
@@ -135,7 +166,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     client.on('reconnected', async () => {
         await treeProvider.loadMemories();
         statusBar.setConnected(treeProvider.getMemoryCount());
-        vscode.window.showInformationMessage('Cortex reconnected successfully.');
     });
     client.on('error', (err: Error) => statusBar.setError(err.message));
 
@@ -149,18 +179,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     statusBar.show();
 
+    // ─── Zero-Config: Auto-connect silently on first install ─────────
     const hasSeenWalkthrough = context.globalState.get<boolean>('cortex.hasSeenWalkthrough');
     if (!hasSeenWalkthrough) {
         await context.globalState.update('cortex.hasSeenWalkthrough', true);
-        const action = await vscode.window.showInformationMessage(
-            '🧠 Welcome to Cortex! Set up persistent AI memory in minutes.',
-            'Setup Wizard', 'Learn More', 'Later'
-        );
-        if (action === 'Setup Wizard') {
-            await vscode.commands.executeCommand('cortex.setup');
-        } else if (action === 'Learn More') {
-            await vscode.commands.executeCommand('cortex.openWalkthrough');
-        }
+        // Don't prompt — just auto-connect. Show subtle notification after connected.
+        client.once('connected', () => {
+            vscode.window.showInformationMessage(
+                '🧠 Cortex is ready! Your AI now has persistent memory.',
+                'Learn More'
+            ).then(a => {
+                if (a === 'Learn More') { vscode.commands.executeCommand('cortex.openWalkthrough'); }
+            });
+        });
     }
 
     const profile = await authProvider.getProfile();
@@ -177,12 +208,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }
 
+    // ─── Auto-start with silent retry ────────────────────────────────
     const config = vscode.workspace.getConfiguration('cortex');
     if (config.get<boolean>('autoStart', true)) {
         try {
             await client.start();
         } catch (err: any) {
-            console.log('[Cortex] Auto-start failed:', err.message);
+            console.log('[Cortex] Auto-start failed, retrying in 5s:', err.message);
+            // Silent retry — don't bother the user
+            setTimeout(async () => {
+                if (!client.connected) {
+                    try { await client.start(); } catch (_e) {
+                        console.log('[Cortex] Retry failed, user can connect manually via status bar');
+                    }
+                }
+            }, 5000);
         }
     }
 

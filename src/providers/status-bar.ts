@@ -42,12 +42,7 @@ export class StatusBarProvider {
         this.statusBarItem.text = `$(brain) Cortex: ${memoryCount} memories ${planBadge}`;
         this.statusBarItem.tooltip = this.getPlanTooltip(memoryCount, plan, trialDaysLeft);
         this.statusBarItem.backgroundColor = undefined;
-
-        if (plan === 'FREE') {
-            this.statusBarItem.command = 'cortex.upgrade';
-        } else {
-            this.statusBarItem.command = 'cortex.openDashboard';
-        }
+        this.statusBarItem.command = 'cortex.showQuickActions';
     }
 
     setPlan(plan: Plan, trialDaysLeft: number | null): void {
@@ -58,10 +53,10 @@ export class StatusBarProvider {
     }
 
     setFree(): void {
-        this.statusBarItem.text = '$(brain) Cortex: Free';
-        this.statusBarItem.tooltip = 'Cortex Free Plan — 20 memories, basic features\nClick to upgrade';
+        this.statusBarItem.text = '$(brain) Cortex';
+        this.statusBarItem.tooltip = 'Cortex — All features unlocked 🚀\nClick for quick actions';
         this.statusBarItem.backgroundColor = undefined;
-        this.statusBarItem.command = 'cortex.upgrade';
+        this.statusBarItem.command = 'cortex.showQuickActions';
     }
 
     setDisconnected(): void {
@@ -85,7 +80,7 @@ export class StatusBarProvider {
             case 'PRO': return '⭐ PRO';
             case 'TRIAL':
                 return trialDaysLeft !== null ? `🕐 Trial (${trialDaysLeft}d)` : '🕐 Trial';
-            case 'FREE': return '— Free';
+            case 'FREE': return '🚀';
             default: return '';
         }
     }
@@ -97,8 +92,8 @@ export class StatusBarProvider {
             case 'PRO': return `${base}⭐ Cortex PRO — All features unlocked, unlimited memories`;
             case 'TRIAL':
                 return `${base}🕐 Cortex Trial — ${trialDaysLeft ?? '?'} days remaining\nAll PRO features active during trial\nClick to view dashboard`;
-            case 'FREE': return `${base}Cortex Free — 20 memories, basic features\nClick to upgrade to PRO`;
-            default: return `${base}Click to open dashboard`;
+            case 'FREE': return `${base}Cortex — All features unlocked\nClick for quick actions`;
+            default: return `${base}Click for quick actions`;
         }
     }
 }
