@@ -116,6 +116,8 @@ describe('Command Definitions', () => {
         'cortex.logout',
         'cortex.enterKey',
         'cortex.upgrade',
+        'cortex.showQuickActions',
+        'cortex.reconnect',
     ];
 
     for (const cmd of expectedCommands) {
@@ -124,8 +126,8 @@ describe('Command Definitions', () => {
         });
     }
 
-    it('should have exactly 17 commands', () => {
-        assert.strictEqual(commands.length, 17, `Expected 17 commands, got ${commands.length}`);
+    it('should have exactly 19 commands', () => {
+        assert.strictEqual(commands.length, 19, `Expected 19 commands, got ${commands.length}`);
     });
 
     it('every command should have a title', () => {

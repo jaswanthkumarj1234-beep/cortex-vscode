@@ -117,8 +117,8 @@ function buildArchitectureGraph(workspaceRoot) {
 function storeArchitectureGraph(memoryStore, graph) {
     if (graph.totalFiles === 0)
         return 0;
-    // Remove old architecture memories
-    const existing = memoryStore.getActive(500).filter(m => m.tags?.includes('architecture-graph'));
+    // Remove old architecture memories (SQL tag search instead of JS filter)
+    const existing = memoryStore.findByTag('architecture-graph', 500);
     for (const m of existing) {
         try {
             memoryStore.deactivate(m.id, 'arch-graph-refresh');
@@ -241,7 +241,7 @@ function extractLocalImports(content, currentFile) {
     for (const pattern of patterns) {
         let match;
         while ((match = pattern.exec(content)) !== null) {
-            let importPath = match[1];
+            const importPath = match[1];
             // Resolve relative path
             let resolved = path.posix.join(currentDir, importPath);
             // Normalize extensions

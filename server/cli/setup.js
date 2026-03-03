@@ -86,8 +86,18 @@ const CLIENTS = {
 // ─── Server Entry ─────────────────────────────────────────────────────────────
 const SERVER_ENTRY = {
     command: 'npx',
-    args: ['-y', 'cortex-mcp'],
+    args: ['-y', 'cortex-mcp@latest'],
+    transportType: 'stdio',
 };
+// Entry with optional env vars (for users who set up OpenRouter)
+function getServerEntryWithEnv() {
+    const entry = { ...SERVER_ENTRY };
+    // Check if OPENROUTER_API_KEY is set in the system environment
+    if (process.env.OPENROUTER_API_KEY) {
+        entry.env = { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY };
+    }
+    return entry;
+}
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function readJSON(filePath) {
     try {
@@ -124,7 +134,7 @@ function configureClient(clientKey) {
         return false;
     }
     const config = readJSON(client.configPath);
-    const updated = setNestedKey(config, client.configKey, SERVER_ENTRY);
+    const updated = setNestedKey(config, client.configKey, getServerEntryWithEnv());
     writeJSON(client.configPath, updated);
     console.log(`[OK] ${client.name} configured!`);
     console.log(`   Config: ${client.configPath}`);
@@ -141,9 +151,9 @@ function autoDetect() {
 }
 // ─── Git Hook Installation ────────────────────────────────────────────────────
 const HOOKS = {
-    'post-commit': '#!/bin/sh\n# Cortex — Auto-capture commits\ncortex-capture 2>/dev/null || true\n',
-    'post-checkout': '#!/bin/sh\n# Cortex — Track branch switches\ncortex-hooks checkout "$@" 2>/dev/null || true\n',
-    'post-merge': '#!/bin/sh\n# Cortex — Track merges\ncortex-hooks merge "$@" 2>/dev/null || true\n',
+    'post-commit': '#!/bin/sh\n# Cortex — Auto-capture commits\nnpx cortex-capture 2>/dev/null || true\n',
+    'post-checkout': '#!/bin/sh\n# Cortex — Track branch switches\nnpx cortex-hooks checkout "$@" 2>/dev/null || true\n',
+    'post-merge': '#!/bin/sh\n# Cortex — Track merges\nnpx cortex-hooks merge "$@" 2>/dev/null || true\n',
 };
 function installGitHooks(workspaceRoot) {
     const gitDir = path.join(workspaceRoot, '.git');
@@ -164,7 +174,12 @@ function installGitHooks(workspaceRoot) {
             fs.appendFileSync(hookPath, `\n# Cortex MCP\n${appendLine}\n`);
         }
         else {
-            fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
+            fs.writeFileSync(hookPath, hookContent);
+            // Make executable on Unix (safe no-op on Windows)
+            try {
+                fs.chmodSync(hookPath, 0o755);
+            }
+            catch { /* Windows ignores chmod */ }
         }
         installed++;
     }
@@ -287,7 +302,13 @@ function main() {
         console.log('[INFO] No git repo detected in current directory.');
         console.log('   Run "cortex-setup" inside a git repo to enable auto-capture.');
     }
-    console.log('\nDone! Restart your AI client to activate Cortex.\n');
+    console.log('\nDone! Restart your AI client to activate Cortex.');
+    console.log('');
+    console.log('💡 TIP: Make Cortex 3x smarter for FREE:');
+    console.log('   1. Get a free API key at https://openrouter.ai/keys');
+    console.log('   2. Add OPENROUTER_API_KEY to your MCP config env');
+    console.log('   3. Cortex will use free LLM for smarter memory extraction');
+    console.log('');
 }
 main();
 //# sourceMappingURL=setup.js.map

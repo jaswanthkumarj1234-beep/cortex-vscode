@@ -160,6 +160,27 @@ try {
     const handler = (0, mcp_handler_1.createMCPHandler)(memoryStore, eventLog, workspaceRoot);
     handleMCPRequest = handler ? handler.handleMCPRequest : null;
     console.log(`[cortex-mcp] Started with ${memoryStore.activeCount()} memories from ${dataDir}`);
+    // Non-blocking version check — notify if outdated
+    try {
+        const currentVersion = require('../package.json').version;
+        const https = require('https');
+        const req = https.get('https://registry.npmjs.org/cortex-mcp/latest', { timeout: 3000 }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const latest = JSON.parse(data).version;
+                    if (latest && latest !== currentVersion) {
+                        console.log(`[cortex-mcp] ⚡ Update available: v${currentVersion} → v${latest}. Run: npm install -g cortex-mcp@latest`);
+                    }
+                }
+                catch { }
+            });
+        });
+        req.on('error', () => { });
+        req.on('timeout', () => req.destroy());
+    }
+    catch { }
     // Run memory decay on startup, then every 6 hours
     (0, memory_decay_1.cleanupMemories)(memoryStore);
     setInterval(() => (0, memory_decay_1.cleanupMemories)(memoryStore), 6 * 60 * 60 * 1000);
@@ -192,7 +213,7 @@ try {
         // Get initial license (may be FREE if no cache yet)
         (0, license_1.getLicense)();
         // Wait up to 5s for online verification so the first status shows real plan
-        (0, license_1.waitForVerification)(5000).then((verified) => {
+        (0, license_1.waitForVerification)(1000).then((_verified) => {
             console.log(`[cortex-mcp] ${(0, feature_gate_1.formatPlanStatus)()}`);
             const trialStatus = (0, license_1.getTrialStatus)();
             if (trialStatus) {

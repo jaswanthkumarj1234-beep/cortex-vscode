@@ -87,8 +87,8 @@ function importMemories(memoryStore, bundle) {
     let imported = 0;
     let skipped = 0;
     let errors = 0;
-    // Load active memories ONCE — O(n) instead of O(n²)
-    const active = memoryStore.getActive(5000);
+    // Load active memories for dedup — cap at 1000 (covers most practical cases)
+    const active = memoryStore.getActive(1000);
     const existingKeys = new Set(active.map(e => `${e.type}::${e.intent.toLowerCase().trim()}`));
     for (const m of bundle.memories) {
         try {

@@ -30,6 +30,7 @@ export declare class ImportVerifier {
     };
     /** Extract import package names from code text */
     extractImports(text: string): string[];
+    private static readonly NODE_BUILTINS;
     private isNodeBuiltin;
     private findSimilar;
     private levenshteinClose;

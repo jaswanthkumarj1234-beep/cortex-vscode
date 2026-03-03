@@ -79,9 +79,13 @@ function startDashboard(memoryStore) {
 function apiMemories(res, store, url) {
     const type = url.searchParams.get('type');
     const query = url.searchParams.get('q');
-    let memories = store.getActive(200);
+    // Use SQL-level filtering instead of fetching all + JS filter
+    let memories;
     if (type && type !== 'ALL') {
-        memories = memories.filter(m => m.type === type);
+        memories = store.getByType(type, 200);
+    }
+    else {
+        memories = store.getActive(200);
     }
     if (query) {
         const q = query.toLowerCase();
@@ -145,6 +149,7 @@ function serveDashboard(res, store) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30">
     <title>🧠 Cortex Memory Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -201,7 +206,7 @@ function serveDashboard(res, store) {
                 <div class="stat-label">Active Memories</div>
             </div>
             <div class="stat">
-                <div class="stat-value">${stats.storeCount}/30</div>
+                <div class="stat-value">${stats.storeCount}/${stats.storeLimit || 500}</div>
                 <div class="stat-label">Session Stores</div>
             </div>
             <div class="stat">

@@ -8,6 +8,10 @@ export declare class EventLog {
     private db;
     private appendStmt;
     private markProcessedStmt;
+    private getUnprocessedStmt;
+    private getByFileStmt;
+    private getRecentStmt;
+    private countStmt;
     constructor(database: CognitiveDatabase);
     /** Append a new event (immutable — never modified after insert) */
     append(event: BrainEvent): number;

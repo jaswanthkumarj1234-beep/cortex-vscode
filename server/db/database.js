@@ -181,6 +181,10 @@ CREATE TABLE IF NOT EXISTS adaptive_config (
 class CognitiveDatabase {
     db;
     _dbPath;
+    _writeCount = 0;
+    _checkpointTimer = null;
+    static CHECKPOINT_WRITE_THRESHOLD = 100;
+    static CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
     constructor(storagePath) {
         const dataDir = path.join(storagePath, 'data');
         if (!fs.existsSync(dataDir)) {
@@ -193,6 +197,7 @@ class CognitiveDatabase {
             : undefined;
         this.db = new better_sqlite3_1.default(this._dbPath, { nativeBinding });
         this.initialize();
+        this.startCheckpointTimer();
     }
     initialize() {
         // Execute pragmas first (they can't be in a transaction)
@@ -217,10 +222,34 @@ class CognitiveDatabase {
             }
         }
     }
-    migrate(fromVersion) {
+    migrate(_fromVersion) {
         // Future migrations go here
         // if (fromVersion < 2) { ... }
         this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
+    }
+    /** Start periodic WAL checkpointing (every 30 min) */
+    startCheckpointTimer() {
+        this._checkpointTimer = setInterval(() => {
+            try {
+                this.checkpoint();
+            }
+            catch { }
+        }, CognitiveDatabase.CHECKPOINT_INTERVAL_MS);
+        // Don't block process exit
+        if (this._checkpointTimer.unref) {
+            this._checkpointTimer.unref();
+        }
+    }
+    /** Track a write operation and auto-checkpoint if threshold reached */
+    trackWrite() {
+        this._writeCount++;
+        if (this._writeCount >= CognitiveDatabase.CHECKPOINT_WRITE_THRESHOLD) {
+            this._writeCount = 0;
+            try {
+                this.checkpoint();
+            }
+            catch { }
+        }
     }
     /** Get the raw database connection for direct queries */
     get connection() {
@@ -246,6 +275,10 @@ class CognitiveDatabase {
     }
     /** Close the database connection */
     close() {
+        if (this._checkpointTimer) {
+            clearInterval(this._checkpointTimer);
+            this._checkpointTimer = null;
+        }
         this.checkpoint();
         this.db.close();
     }

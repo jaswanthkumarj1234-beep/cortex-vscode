@@ -1,17 +1,3 @@
-/**
- * LLM Enhancer — Optional LLM-powered memory enrichment.
- *
- * When the user provides an API key (OPENAI_API_KEY or CORTEX_LLM_KEY),
- * this module uses an LLM to:
- *   1. Better classify memories (vs. keyword matching)
- *   2. Extract richer insights from commit messages
- *   3. Generate smart tags and connections
- *   4. Summarize and merge related memories
- *
- * When no API key is available, falls back to keyword-based classification.
- * This ensures Cortex works for EVERYONE — free without an API key,
- * but smarter WITH one.
- */
 export interface LLMEnhancedMemory {
     type: string;
     intent: string;
@@ -25,6 +11,8 @@ export interface LLMConfig {
     model: string;
     baseUrl: string;
     maxTokens: number;
+    provider: 'openrouter' | 'openai' | 'anthropic' | 'custom';
+    extraHeaders?: Record<string, string>;
 }
 /**
  * Check if LLM enhancement is available (API key configured).

@@ -5,6 +5,11 @@ class EventLog {
     db;
     appendStmt;
     markProcessedStmt;
+    // Cached read-query prepared statements
+    getUnprocessedStmt;
+    getByFileStmt;
+    getRecentStmt;
+    countStmt;
     constructor(database) {
         this.db = database.connection;
         this.appendStmt = this.db.prepare(`
@@ -14,6 +19,11 @@ class EventLog {
         this.markProcessedStmt = this.db.prepare(`
       UPDATE events SET processed = 1 WHERE id = ?
     `);
+        // Cache read query statements
+        this.getUnprocessedStmt = this.db.prepare('SELECT * FROM events WHERE processed = 0 ORDER BY timestamp ASC LIMIT ?');
+        this.getByFileStmt = this.db.prepare('SELECT * FROM events WHERE file = ? ORDER BY timestamp DESC LIMIT ?');
+        this.getRecentStmt = this.db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?');
+        this.countStmt = this.db.prepare('SELECT COUNT(*) as cnt FROM events');
     }
     /** Append a new event (immutable — never modified after insert) */
     append(event) {
@@ -45,28 +55,22 @@ class EventLog {
     }
     /** Get unprocessed events (oldest first) */
     getUnprocessed(limit = 100) {
-        const rows = this.db
-            .prepare('SELECT * FROM events WHERE processed = 0 ORDER BY timestamp ASC LIMIT ?')
-            .all(limit);
+        const rows = this.getUnprocessedStmt.all(limit);
         return rows.map(this.rowToEvent);
     }
     /** Get events by file */
     getByFile(filePath, limit = 50) {
-        const rows = this.db
-            .prepare('SELECT * FROM events WHERE file = ? ORDER BY timestamp DESC LIMIT ?')
-            .all(filePath, limit);
+        const rows = this.getByFileStmt.all(filePath, limit);
         return rows.map(this.rowToEvent);
     }
     /** Get recent events */
     getRecent(limit = 50) {
-        const rows = this.db
-            .prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?')
-            .all(limit);
+        const rows = this.getRecentStmt.all(limit);
         return rows.map(this.rowToEvent);
     }
     /** Total event count */
     count() {
-        const row = this.db.prepare('SELECT COUNT(*) as cnt FROM events').get();
+        const row = this.countStmt.get();
         return row.cnt;
     }
     rowToEvent(row) {

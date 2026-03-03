@@ -4,6 +4,7 @@ exports.getTemporalBuckets = getTemporalBuckets;
 exports.getRecentChanges = getRecentChanges;
 exports.formatTemporalContext = formatTemporalContext;
 exports.getWorkspaceDiff = getWorkspaceDiff;
+const child_process_1 = require("child_process");
 /** Get memories bucketed by time period */
 function getTemporalBuckets(memoryStore) {
     const now = Date.now();
@@ -15,21 +16,16 @@ function getTemporalBuckets(memoryStore) {
         { label: 'Yesterday', memories: [], start: now - 2 * DAY, end: now - DAY },
         { label: 'This week', memories: [], start: now - 7 * DAY, end: now - 2 * DAY },
     ];
-    const active = memoryStore.getActive(200);
-    for (const m of active) {
-        for (const bucket of buckets) {
-            if (m.timestamp >= bucket.start && m.timestamp < bucket.end) {
-                bucket.memories.push(m);
-                break;
-            }
-        }
+    // SQL-targeted: fetch only memories in each time range
+    for (const bucket of buckets) {
+        bucket.memories = memoryStore.getActiveByTimestampRange(bucket.start, bucket.end, 50);
     }
     return buckets.filter(b => b.memories.length > 0);
 }
 /** Get only recent changes (last N hours) */
 function getRecentChanges(memoryStore, hours = 24) {
     const since = Date.now() - (hours * 3600000);
-    return memoryStore.getActive(200).filter(m => m.timestamp >= since);
+    return memoryStore.getActiveByTimestampRange(since, Date.now(), 200);
 }
 /** Format temporal context for injection into force_recall */
 function formatTemporalContext(memoryStore) {
@@ -52,11 +48,11 @@ function formatTemporalContext(memoryStore) {
 /** Get workspace changes since last session */
 function getWorkspaceDiff(workspaceRoot) {
     try {
-        const { execSync } = require('child_process');
+        // execSync imported at module level
         // Recent commits
         let commits = '';
         try {
-            commits = execSync('git log --oneline -5', {
+            commits = (0, child_process_1.execSync)('git log --oneline -5', {
                 cwd: workspaceRoot,
                 encoding: 'utf-8',
                 timeout: 3000,
@@ -66,7 +62,7 @@ function getWorkspaceDiff(workspaceRoot) {
         // Files changed recently
         let diffStat = '';
         try {
-            diffStat = execSync('git diff --stat HEAD~3 2>nul || echo "no git history"', {
+            diffStat = (0, child_process_1.execSync)('git diff --stat HEAD~3 2>nul || echo "no git history"', {
                 cwd: workspaceRoot,
                 encoding: 'utf-8',
                 timeout: 3000,
@@ -76,7 +72,7 @@ function getWorkspaceDiff(workspaceRoot) {
         // Current branch
         let branch = '';
         try {
-            branch = execSync('git branch --show-current', {
+            branch = (0, child_process_1.execSync)('git branch --show-current', {
                 cwd: workspaceRoot,
                 encoding: 'utf-8',
                 timeout: 2000,

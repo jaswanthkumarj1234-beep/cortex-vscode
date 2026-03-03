@@ -23,10 +23,24 @@ const git_memory_1 = require("../memory/git-memory");
 const export_map_1 = require("../scanners/export-map");
 const architecture_graph_1 = require("../scanners/architecture-graph");
 const rate_limiter_1 = require("../security/rate-limiter");
-const license_1 = require("../security/license");
 const feature_gate_1 = require("../security/feature-gate");
 const export_import_1 = require("../memory/export-import");
 const llm_enhancer_1 = require("../memory/llm-enhancer");
+const usage_stats_1 = require("../memory/usage-stats");
+const correction_detector_1 = require("../memory/correction-detector");
+const success_tracker_1 = require("../memory/success-tracker");
+const error_learner_1 = require("../memory/error-learner");
+const completion_resolver_1 = require("../memory/completion-resolver");
+const pre_flight_1 = require("../memory/pre-flight");
+const impact_analyzer_1 = require("../memory/impact-analyzer");
+const resume_work_1 = require("../memory/resume-work");
+const preference_learner_1 = require("../memory/preference-learner");
+const convention_detector_1 = require("../memory/convention-detector");
+const export_map_2 = require("../scanners/export-map");
+const file_relationships_1 = require("../memory/file-relationships");
+const instructions_generator_1 = require("../memory/instructions-generator");
+const tool_recommender_1 = require("../memory/tool-recommender");
+const regression_guard_1 = require("../memory/regression-guard");
 // --- Query Expansion (Synonym Map) ---
 const SYNONYMS = {
     auth: ['authentication', 'login', 'signin', 'sign-in', 'credentials'],
@@ -143,7 +157,7 @@ const MCP_TOOLS = [
     },
     {
         name: 'force_recall',
-        description: 'MANDATORY: Call this at the START of every conversation. Returns ALL corrections, decisions, conventions, and bug fixes. Also searches for topic-specific memories. This is the single entry point for complete context injection.',
+        description: 'MANDATORY: Call this at the START of every conversation. Returns ALL corrections, decisions, conventions, and bug fixes. Also searches for topic-specific memories. This is the single entry point for complete context injection. Without calling this, you WILL repeat past mistakes, contradict previous decisions, and miss critical conventions. The user expects you to remember everything from past sessions.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -202,7 +216,7 @@ const MCP_TOOLS = [
     },
     {
         name: 'auto_learn',
-        description: 'CALL THIS AFTER EVERY RESPONSE. Pass the text of your response and Cortex will automatically extract and store any decisions, corrections, conventions, or bug fixes — with zero manual effort. This is how Cortex learns passively.',
+        description: 'CALL THIS AFTER EVERY RESPONSE. Pass the text of your response and Cortex will automatically extract and store any decisions, corrections, conventions, or bug fixes — with zero manual effort. This is how Cortex learns passively. If you skip this, everything you said in this conversation is LOST FOREVER — the user will have to repeat themselves next time.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -239,6 +253,48 @@ const MCP_TOOLS = [
             properties: {},
         },
     },
+    {
+        name: 'review_code',
+        description: 'Review code against your stored conventions, past bug patterns, and project decisions. Returns specific violations with memory references — like having a senior dev review your code.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                code: { type: 'string', description: 'The code to review' },
+                filename: { type: 'string', description: 'Optional filename for context-aware review' },
+            },
+            required: ['code'],
+        },
+    },
+    {
+        name: 'pre_check',
+        description: 'Pre-flight check: get ALL conventions, gotchas, past bugs, and corrections for a file BEFORE writing code. Like a pilot\'s checklist — call this before making any code changes to avoid repeating past mistakes. Skipping this risks reintroducing bugs that were already fixed.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                filename: { type: 'string', description: 'The file you are about to edit' },
+                task: { type: 'string', description: 'What you plan to do (helps find relevant past failures)' },
+            },
+        },
+    },
+    {
+        name: 'check_impact',
+        description: 'Impact analysis: before editing a file, check which other files depend on it. Shows direct and indirect dependents with risk level. Prevents breaking changes.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                file: { type: 'string', description: 'The file you plan to modify' },
+            },
+            required: ['file'],
+        },
+    },
+    {
+        name: 'resume_work',
+        description: 'Resume work after a conversation break. Returns: last session summary, current tasks, recent corrections (don\'t repeat!), recent decisions, and activity summary. Call this when starting a new conversation about ongoing work.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
 ];
 // --- Dynamic Context via ContextBuilder ---
 let cachedContextBuilder = null;
@@ -259,11 +315,12 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                     id,
                     result: {
                         protocolVersion: '2024-11-05',
-                        capabilities: { tools: {}, resources: {} },
-                        serverInfo: { name: 'cortex', version: '2.0.0' },
+                        capabilities: { tools: {}, resources: {}, prompts: {} },
+                        serverInfo: { name: 'Cortex', version: require('../../package.json').version },
                     },
                 };
             case 'notifications/initialized':
+            case 'notifications/cancelled':
                 return null;
             case 'tools/list':
                 return {
@@ -278,7 +335,7 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                     result: {
                         resources: [{
                                 uri: 'memory://brain/context',
-                                name: 'Brain Context',
+                                name: 'Cortex MCP Context',
                                 description: 'Top memories — corrections, decisions, conventions. Read this before every response.',
                                 mimeType: 'text/plain',
                             }],
@@ -305,6 +362,97 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                     error: { code: -32602, message: `Unknown resource: ${uri}` },
                 };
             }
+            case 'prompts/list':
+                return {
+                    jsonrpc: '2.0', id,
+                    result: {
+                        prompts: [
+                            {
+                                name: 'cortex-review',
+                                description: 'Review code against stored conventions, past bugs, and project decisions. Returns specific violations.',
+                                arguments: [
+                                    { name: 'code', description: 'The code to review', required: true },
+                                    { name: 'filename', description: 'Filename for context-aware review', required: false },
+                                ],
+                            },
+                            {
+                                name: 'cortex-debug',
+                                description: 'Debug an issue using Cortex memory. Checks for similar past bugs, failed attempts, and gotchas.',
+                                arguments: [
+                                    { name: 'error', description: 'The error message or issue description', required: true },
+                                    { name: 'file', description: 'The file where the error occurs', required: false },
+                                ],
+                            },
+                            {
+                                name: 'cortex-new-feature',
+                                description: 'Pre-flight checklist before building a new feature. Gets conventions, gotchas, and architecture context.',
+                                arguments: [
+                                    { name: 'feature', description: 'What feature you plan to build', required: true },
+                                    { name: 'files', description: 'Files you plan to modify', required: false },
+                                ],
+                            },
+                        ],
+                    },
+                };
+            case 'prompts/get': {
+                const promptName = rpc.params?.name;
+                const promptArgs = rpc.params?.arguments || {};
+                if (promptName === 'cortex-review') {
+                    return {
+                        jsonrpc: '2.0', id,
+                        result: {
+                            description: 'Code review against Cortex memory',
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: {
+                                        type: 'text',
+                                        text: `Review this code against all stored conventions, past bug patterns, and project decisions.\n\nFile: ${promptArgs.filename || 'unknown'}\n\n\`\`\`\n${promptArgs.code || '(no code provided)'}\n\`\`\`\n\nUse the review_code and pre_check tools to check against stored memory. Report any violations with memory IDs.`,
+                                    },
+                                },
+                            ],
+                        },
+                    };
+                }
+                if (promptName === 'cortex-debug') {
+                    return {
+                        jsonrpc: '2.0', id,
+                        result: {
+                            description: 'Debug with Cortex memory context',
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: {
+                                        type: 'text',
+                                        text: `I'm debugging this issue:\n\n${promptArgs.error || '(no error provided)'}\n\nFile: ${promptArgs.file || 'unknown'}\n\nUse recall_memory to search for similar past bugs, failed attempts, and gotchas. Check if this matches any known patterns. Use check_impact to see what other files might be affected.`,
+                                    },
+                                },
+                            ],
+                        },
+                    };
+                }
+                if (promptName === 'cortex-new-feature') {
+                    return {
+                        jsonrpc: '2.0', id,
+                        result: {
+                            description: 'New feature pre-flight checklist',
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: {
+                                        type: 'text',
+                                        text: `I'm building a new feature: ${promptArgs.feature || '(no feature described)'}\n\nFiles I plan to modify: ${promptArgs.files || 'unknown'}\n\nBefore I start, run pre_check for each file, check_impact for dependency risks, and recall_memory for any relevant past work. Give me a checklist of things to watch out for.`,
+                                    },
+                                },
+                            ],
+                        },
+                    };
+                }
+                return {
+                    jsonrpc: '2.0', id,
+                    error: { code: -32602, message: `Unknown prompt: ${promptName}` },
+                };
+            }
             case 'tools/call': {
                 const toolName = rpc.params?.name;
                 const args = rpc.params?.arguments || {};
@@ -315,10 +463,10 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                         result: { content: [{ type: 'text', text: 'Error: query too long (max 1000 chars)' }], isError: true },
                     };
                 }
-                if (args.content && typeof args.content === 'string' && args.content.length > 5000) {
+                if (args.content && typeof args.content === 'string' && args.content.length > 50000) {
                     return {
                         jsonrpc: '2.0', id,
-                        result: { content: [{ type: 'text', text: 'Error: content too long (max 5000 chars)' }], isError: true },
+                        result: { content: [{ type: 'text', text: 'Error: content too long (max 50000 chars)' }], isError: true },
                     };
                 }
                 if (toolName === 'recall_memory') {
@@ -368,6 +516,18 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 }
                 else if (toolName === 'health_check') {
                     return handleHealthCheck(id);
+                }
+                else if (toolName === 'review_code') {
+                    return handleReviewCode(id, args);
+                }
+                else if (toolName === 'pre_check') {
+                    return handlePreCheck(id, args);
+                }
+                else if (toolName === 'check_impact') {
+                    return handleCheckImpact(id, args);
+                }
+                else if (toolName === 'resume_work') {
+                    return handleResumeWork(id);
                 }
                 else {
                     return {
@@ -437,10 +597,32 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 ...r,
                 matchMethod: 'hybrid'
             }));
-            // 3b. Context-based boost (if current file provided)
-            if (args.currentFile) {
-                // Boost memories related to this file or its directory
-                // Implementation in memory-ranker.ts (pending)
+            // 3b. Project-aware boost (memories from current project rank higher)
+            if (workspaceRoot) {
+                try {
+                    const pkgPath = require('path').join(workspaceRoot, 'package.json');
+                    let projectTag = '';
+                    if (require('fs').existsSync(pkgPath)) {
+                        const pkg = JSON.parse(require('fs').readFileSync(pkgPath, 'utf-8'));
+                        projectTag = (pkg.name || '').toLowerCase();
+                    }
+                    if (!projectTag)
+                        projectTag = require('path').basename(workspaceRoot).toLowerCase();
+                    if (projectTag) {
+                        ranked = ranked.map(r => {
+                            const tags = r.memory.tags || [];
+                            const hasProjectTag = tags.some(t => t.toLowerCase().includes(projectTag));
+                            const hasDiffProject = tags.some(t => t.startsWith('project:') && !t.toLowerCase().includes(projectTag));
+                            if (hasProjectTag)
+                                return { ...r, score: r.score * 1.3 };
+                            if (hasDiffProject)
+                                return { ...r, score: r.score * 0.7 };
+                            return r;
+                        });
+                        ranked.sort((a, b) => b.score - a.score);
+                    }
+                }
+                catch { /* project detection failed — skip boost */ }
             }
             // 3c. Apply attention-based re-ranking (debugging→bugs, coding→conventions)
             const recallContext = (0, attention_ranker_1.detectActionContext)(queryText, currentFile);
@@ -473,14 +655,14 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             ranked = ranked.slice(0, maxResults);
             // 4. Touch for access tracking (reinforcement — used memories get stronger)
             if (ranked.length > 0) {
-                await Promise.all(ranked.map(m => {
-                    try {
-                        return memoryStore.touch(m.memory.id);
+                memoryStore.runTransaction(() => {
+                    for (const m of ranked) {
+                        try {
+                            memoryStore.touch(m.memory.id);
+                        }
+                        catch { /* non-fatal */ }
                     }
-                    catch {
-                        return Promise.resolve();
-                    }
-                }));
+                });
                 (0, confidence_decay_1.runDecayMaintenance)(memoryStore); // Opportunistic decay
             }
             (0, memory_cache_1.setCache)(cacheKey, ranked);
@@ -533,7 +715,7 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
         }
         try {
             // License check — gate memory storage
-            const activeCount = memoryStore.getActive(9999).length;
+            const activeCount = memoryStore.activeCount();
             const storeCheck = (0, feature_gate_1.canStoreMemory)(activeCount);
             if (!storeCheck.allowed) {
                 return {
@@ -576,7 +758,7 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             // Active contradiction detection — find and resolve conflicts
             let contradictionNote = '';
             try {
-                const contradiction = (0, memory_quality_1.findContradiction)(memoryStore, memType, sanitized);
+                const contradiction = (0, memory_quality_1.findContradiction)(memoryStore, sanitized, memType);
                 if (contradiction) {
                     memoryStore.deactivate(contradiction.existingId, memory.id);
                     memoryStore.addEdge({
@@ -631,6 +813,15 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
         }
     }
     function handleGetStats(id) {
+        const health = (0, usage_stats_1.calculateBrainHealth)(memoryStore);
+        const lifetime = (0, usage_stats_1.getLifetimeStats)();
+        const streak = (0, usage_stats_1.getStreakDisplay)();
+        let llmProvider = 'none';
+        try {
+            if ((0, llm_enhancer_1.isLLMAvailable)())
+                llmProvider = (0, llm_enhancer_1.getLLMProvider)();
+        }
+        catch { /* */ }
         return {
             jsonrpc: '2.0', id,
             result: {
@@ -642,6 +833,16 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                             totalEvents: eventLog.count(),
                             vectorSearchReady: (0, embedding_manager_1.isWorkerReady)(),
                             cacheSize: (0, memory_cache_1.cacheSize)(),
+                            brainHealth: { score: health.score, grade: health.grade, tips: health.tips },
+                            savedYouCount: lifetime.savedYouCount,
+                            totalSessions: lifetime.totalSessions,
+                            timeSaved: lifetime.totalMemoriesServed * 15 + lifetime.totalHallucationsCaught * 300,
+                            streak: streak || 'Day 1',
+                            longestStreak: lifetime.longestStreak || 0,
+                            totalAutoLearns: lifetime.totalAutoLearns,
+                            successPatternsLearned: lifetime.totalSuccessPatterns || 0,
+                            errorsLearned: lifetime.totalErrorsLearned || 0,
+                            llmProvider,
                         }, null, 2),
                     }],
             },
@@ -671,16 +872,46 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 extraMemories += (0, architecture_graph_1.storeArchitectureGraph)(memoryStore, archGraph);
             }
             catch { /* non-fatal */ }
+            // Convention auto-detection — analyze actual code patterns
+            try {
+                const conventions = (0, convention_detector_1.detectConventions)(root);
+                for (const conv of conventions) {
+                    try {
+                        (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                            type: 'CONVENTION',
+                            intent: conv.pattern,
+                            action: conv.evidence,
+                            reason: `Auto-detected from code (${conv.category}, confidence: ${conv.confidence})`,
+                            confidence: conv.confidence,
+                            importance: conv.confidence,
+                            tags: ['convention', 'auto-detected', conv.category],
+                        });
+                        extraMemories++;
+                    }
+                    catch { /* skip duplicates */ }
+                }
+            }
+            catch { /* non-fatal */ }
             (0, memory_cache_1.invalidateCache)();
+            (0, usage_stats_1.trackScan)();
             const total = count + extraMemories;
+            // Report knowledge gaps after scan
+            let gapReport = '';
+            try {
+                const gaps = (0, meta_memory_1.detectKnowledgeGaps)(memoryStore, root);
+                if (gaps.length > 0) {
+                    gapReport = `\n\n${(0, meta_memory_1.formatKnowledgeGaps)(gaps)}`;
+                }
+            }
+            catch { /* non-fatal */ }
             return {
                 jsonrpc: '2.0', id,
                 result: {
                     content: [{
                             type: 'text',
                             text: total > 0
-                                ? `Project scanned successfully. ${total} memories created (stack, structure, config, git history, export map, architecture graph).`
-                                : 'Project was already scanned. No new memories created.',
+                                ? `Project scanned successfully. ${total} memories created (stack, structure, config, git history, export map, architecture graph, coding conventions).${gapReport}`
+                                : `Project was already scanned. No new memories created.${gapReport}`,
                         }],
                 },
             };
@@ -756,6 +987,9 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             };
         }
         try {
+            // Track file for relationship mapping
+            if (args.filename)
+                (0, file_relationships_1.recordFileEdit)(args.filename);
             const result = (0, code_verifier_1.verifyCode)(args.code, root);
             const lines = [];
             // Imports
@@ -782,6 +1016,20 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                     for (const [file, available] of Object.entries(result.exports.available)) {
                         lines.push(`   ${file} exports: ${available.join(', ')}`);
                     }
+                    // Smart fix suggestions — find closest real exports
+                    try {
+                        const wsRoot = args.workspaceRoot || workspaceRoot;
+                        if (wsRoot) {
+                            const exportMap = (0, export_map_1.buildExportMap)(wsRoot);
+                            for (const invalid of result.exports.invalid) {
+                                const suggestions = (0, export_map_2.suggestRealExport)(exportMap, invalid);
+                                if (suggestions.length > 0) {
+                                    lines.push(`   💡 Did you mean: ${suggestions.slice(0, 3).join(', ')}?`);
+                                }
+                            }
+                        }
+                    }
+                    catch { /* non-fatal */ }
                 }
             }
             // Env vars
@@ -799,6 +1047,12 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             }
             if (lines.length === 0) {
                 lines.push('No imports, exports, or env vars detected in the code.');
+            }
+            // Track hallucination catches for usage stats
+            const catchCount = result.imports.invalid.length + result.exports.invalid.length + result.envVars.invalid.length;
+            if (catchCount > 0) {
+                for (let i = 0; i < catchCount; i++)
+                    (0, usage_stats_1.trackCatch)();
             }
             return {
                 jsonrpc: '2.0', id,
@@ -883,12 +1137,67 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
     }
     async function handleForceRecall(id, args) {
         try {
+            // Fix #17: Cache force_recall with short TTL to avoid redundant rebuilds
+            const cacheKey = `force_recall:${args.topic || ''}:${args.currentFile || ''}`;
+            const cached = (0, memory_cache_1.getCached)(cacheKey);
+            if (cached) {
+                console.log(`  [CACHE] force_recall hit`);
+                return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: cached }] } };
+            }
             const parts = [];
             // ─── BRAIN LAYER 0: End previous session + start new one ─────────
             (0, session_tracker_1.endSession)(memoryStore); // Save previous session summary
+            (0, file_relationships_1.storeRelationships)(memoryStore); // Persist file co-edit relationships
             (0, session_tracker_1.startSession)();
+            (0, usage_stats_1.resetSessionStats)();
             if (args.topic)
                 (0, session_tracker_1.feedSession)({ topic: args.topic });
+            // ─── Project Detection (for project isolation) ───────────────────
+            let projectName = '';
+            if (workspaceRoot) {
+                try {
+                    const pkgPath = require('path').join(workspaceRoot, 'package.json');
+                    if (require('fs').existsSync(pkgPath)) {
+                        const pkg = JSON.parse(require('fs').readFileSync(pkgPath, 'utf-8'));
+                        projectName = pkg.name || require('path').basename(workspaceRoot);
+                    }
+                    else {
+                        projectName = require('path').basename(workspaceRoot);
+                    }
+                }
+                catch {
+                    projectName = require('path').basename(workspaceRoot || '');
+                }
+                if (projectName) {
+                    (0, session_tracker_1.feedSession)({ project: projectName });
+                }
+            }
+            // ─── BRAIN LAYER 0.5: Auto-scan on first run (Day 1 Empty Brain fix) ───
+            if (memoryStore.activeCount() === 0 && workspaceRoot) {
+                try {
+                    console.log(`  [AUTO-SCAN] First run detected — scanning project...`);
+                    const scanner = new project_scanner_1.ProjectScanner(memoryStore, workspaceRoot);
+                    const scanCount = await scanner.scan();
+                    let extraMemories = 0;
+                    try {
+                        extraMemories += (0, export_map_1.storeExportMap)(memoryStore, (0, export_map_1.buildExportMap)(workspaceRoot));
+                    }
+                    catch { }
+                    try {
+                        extraMemories += (0, architecture_graph_1.storeArchitectureGraph)(memoryStore, (0, architecture_graph_1.buildArchitectureGraph)(workspaceRoot));
+                    }
+                    catch { }
+                    const total = scanCount + extraMemories;
+                    if (total > 0) {
+                        parts.push(`## Welcome to Cortex\n\nFirst run detected — auto-scanned your project and created ${total} memories (stack, structure, config, git history, exports, architecture). Cortex will now remember everything across sessions.`);
+                        (0, memory_cache_1.invalidateCache)();
+                        (0, usage_stats_1.trackScan)();
+                    }
+                }
+                catch (scanErr) {
+                    console.log(`  [AUTO-SCAN] Failed: ${scanErr.message}`);
+                }
+            }
             // ─── BRAIN LAYER 1: Maintenance (runs in background) ─────────────
             try {
                 // Decay old unused memories
@@ -902,8 +1211,8 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             }
             catch { /* maintenance errors are non-fatal */ }
             // ─── BRAIN LAYER 2: Attention Context ────────────────────────────
-            const actionContext = (0, license_1.isPro)() ? (0, attention_ranker_1.detectActionContext)(args.topic, args.currentFile) : {};
-            const attentionLabel = (0, license_1.isPro)() ? (0, attention_ranker_1.formatAttentionContext)(actionContext) : '';
+            const actionContext = (0, feature_gate_1.isFeatureAllowed)('attentionRanking') ? (0, attention_ranker_1.detectActionContext)(args.topic, args.currentFile) : {};
+            const attentionLabel = (0, feature_gate_1.isFeatureAllowed)('attentionRanking') ? (0, attention_ranker_1.formatAttentionContext)(actionContext) : '';
             if (attentionLabel)
                 parts.push(attentionLabel);
             // ─── BRAIN LAYER 3: Session Continuity ───────────────────────────
@@ -924,118 +1233,221 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 maxChars: 8000, // leave room for brain layers
             });
             parts.push(fullContext);
-            // ─── BRAIN LAYER 6: Anticipation (file-aware proactive recall) ───
-            if (args.currentFile && (0, license_1.isPro)()) {
-                const anticipated = (0, anticipation_engine_1.formatAnticipation)((0, anticipation_engine_1.anticipate)(memoryStore, args.currentFile));
-                if (anticipated)
-                    parts.push('\n' + anticipated);
-            }
-            // ─── BRAIN LAYER 7: Temporal Context (what changed recently) ─────
-            if ((0, license_1.isPro)()) {
-                const temporal = (0, temporal_engine_1.formatTemporalContext)(memoryStore);
-                if (temporal)
-                    parts.push('\n' + temporal);
-            }
-            // ─── BRAIN LAYER 8: Workspace State (git changes) ────────────────
-            try {
-                const workspace = (0, temporal_engine_1.getWorkspaceDiff)(workspaceRoot || '');
-                if (workspace)
-                    parts.push('\n' + workspace);
-            }
-            catch { /* git not available */ }
-            // ─── BRAIN LAYER 8.5: Git Memory (commit capture + file changes) ───
-            if ((0, license_1.isPro)()) {
-                try {
-                    // Capture recent commits as memories
-                    const commitsCaptured = (0, git_memory_1.captureGitCommits)(memoryStore, workspaceRoot || '', 5);
-                    if (commitsCaptured > 0) {
-                        parts.push(`\n> Captured ${commitsCaptured} new git commit(s) as memories`);
+            // ─── BRAIN LAYERS 6-12: Run in parallel (independent of each other) ───
+            const parallelResults = await Promise.allSettled([
+                // Layer 6: Anticipation
+                (async () => {
+                    if (args.currentFile && (0, feature_gate_1.isFeatureAllowed)('anticipation')) {
+                        return (0, anticipation_engine_1.formatAnticipation)((0, anticipation_engine_1.anticipate)(memoryStore, args.currentFile));
                     }
-                    // Show uncommitted file changes
-                    const fileChanges = (0, git_memory_1.detectFileChanges)(workspaceRoot || '');
-                    const fileChangeText = (0, git_memory_1.formatFileChanges)(fileChanges);
-                    if (fileChangeText)
-                        parts.push('\n' + fileChangeText);
-                }
-                catch { /* git not available */ }
-            } // end isPro() for git memory
-            // ─── BRAIN LAYER 9: Topic-Specific Search ────────────────────────
-            if (args.topic) {
-                try {
-                    let ftsResults = memoryStore.searchFTS(args.topic, 15);
-                    // Apply confidence decay + attention ranking
-                    ftsResults = (0, confidence_decay_1.applyConfidenceDecay)(ftsResults);
-                    ftsResults = (0, attention_ranker_1.rankByAttention)(ftsResults, actionContext);
-                    // Causal chain: follow graph edges for top results
-                    const seen = new Set();
-                    const enriched = [];
-                    for (const r of ftsResults) {
-                        if (seen.has(r.memory.id))
-                            continue;
-                        seen.add(r.memory.id);
-                        enriched.push(r);
-                        // Follow causal links (1 hop)
-                        try {
-                            const related = memoryStore.getRelated(r.memory.id, 1, 3);
-                            for (const rel of related) {
-                                if (!seen.has(rel.memory.id)) {
-                                    seen.add(rel.memory.id);
-                                    enriched.push({ ...rel, score: rel.score * 0.7 });
+                    return '';
+                })(),
+                // Layer 6.5: Proactive Warnings — ⚠️ for files with past bugs/corrections
+                (async () => {
+                    if (!args.currentFile)
+                        return '';
+                    try {
+                        const fileMemories = memoryStore.getByFile(args.currentFile, 50);
+                        const warnings = fileMemories.filter((m) => (m.type === 'CORRECTION' || m.type === 'BUG_FIX') && m.is_active);
+                        if (warnings.length === 0)
+                            return '';
+                        const lines = warnings.slice(0, 5).map((m) => `⚠️ **${m.type}**: ${m.intent}${m.reason && !m.reason.startsWith('Auto-detected') ? ` — _${m.reason}_` : ''}`);
+                        return `\n## ⚠️ Watch Out (past issues with this file)\n${lines.join('\n')}`;
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+                // Layer 7: Temporal Context
+                (async () => {
+                    if ((0, feature_gate_1.isFeatureAllowed)('temporalContext')) {
+                        return (0, temporal_engine_1.formatTemporalContext)(memoryStore);
+                    }
+                    return '';
+                })(),
+                // Layer 8: Workspace State (git)
+                (async () => {
+                    try {
+                        return (0, temporal_engine_1.getWorkspaceDiff)(workspaceRoot || '');
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+                // Layer 8.5: Git Memory
+                (async () => {
+                    if (!(0, feature_gate_1.isFeatureAllowed)('gitMemory'))
+                        return '';
+                    try {
+                        const commitsCaptured = (0, git_memory_1.captureGitCommits)(memoryStore, workspaceRoot || '', 5);
+                        const commitText = commitsCaptured > 0
+                            ? `\n> Captured ${commitsCaptured} new git commit(s) as memories`
+                            : '';
+                        const fileChanges = (0, git_memory_1.detectFileChanges)(workspaceRoot || '');
+                        const fileChangeText = (0, git_memory_1.formatFileChanges)(fileChanges);
+                        return [commitText, fileChangeText].filter(Boolean).join('\n');
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+                // Layer 9: Topic Search — Hybrid (FTS + Vector) for deeper relevance
+                (async () => {
+                    if (!args.topic)
+                        return '';
+                    try {
+                        // FTS search
+                        const ftsResults = memoryStore.searchFTS(args.topic, 15);
+                        // Vector search (semantic — catches what FTS misses)
+                        let vectorResults = [];
+                        if ((0, embedding_manager_1.isWorkerReady)()) {
+                            try {
+                                const topicEmbedding = await (0, embedding_manager_1.embedText)(args.topic);
+                                vectorResults = memoryStore.searchVector(new Float32Array(topicEmbedding), 10);
+                            }
+                            catch { /* vector search failure is non-fatal */ }
+                        }
+                        // Merge FTS + Vector, deduplicate by ID
+                        const merged = (0, memory_ranker_1.rankResults)(ftsResults, vectorResults, 20, args.currentFile);
+                        let ranked = merged.map(r => ({ ...r, matchMethod: 'hybrid' }));
+                        ranked = (0, confidence_decay_1.applyConfidenceDecay)(ranked);
+                        ranked = (0, attention_ranker_1.rankByAttention)(ranked, actionContext);
+                        const seen = new Set();
+                        const enriched = [];
+                        for (const r of ranked) {
+                            if (seen.has(r.memory.id))
+                                continue;
+                            seen.add(r.memory.id);
+                            enriched.push(r);
+                            try {
+                                const related = memoryStore.getRelated(r.memory.id, 1, 3);
+                                for (const rel of related) {
+                                    if (!seen.has(rel.memory.id)) {
+                                        seen.add(rel.memory.id);
+                                        enriched.push({ ...rel, score: rel.score * 0.7 });
+                                    }
                                 }
                             }
+                            catch { }
                         }
-                        catch { }
-                    }
-                    if (enriched.length > 0) {
-                        parts.push('\n## Topic: "' + args.topic + '"');
-                        for (const m of enriched.slice(0, 15)) {
-                            parts.push(`- [${m.memory.type}] ${m.memory.intent}${m.memory.reason ? ` — ${m.memory.reason}` : ''}`);
+                        if (enriched.length > 0) {
+                            const lines = ['\n## Topic: "' + args.topic + '"'];
+                            for (const m of enriched.slice(0, 15)) {
+                                lines.push(`- [${m.memory.type}] ${m.memory.intent}${m.memory.reason ? ` — ${m.memory.reason}` : ''}`);
+                            }
+                            return lines.join('\n');
                         }
+                        return '';
                     }
-                }
-                catch {
-                    parts.push('\n> Note: Topic search unavailable (FTS index needs rebuild).');
+                    catch {
+                        return '\n> Note: Topic search unavailable (FTS index needs rebuild).';
+                    }
+                })(),
+                // Layer 10: Knowledge Gaps (skip when topic is specific — saves tokens)
+                (async () => {
+                    if (args.topic)
+                        return ''; // Skip heavy layer for focused queries
+                    try {
+                        const gaps = (0, meta_memory_1.detectKnowledgeGaps)(memoryStore, workspaceRoot || '');
+                        return (0, meta_memory_1.formatKnowledgeGaps)(gaps);
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+                // Layer 11: Export Map (skip when topic is specific — saves tokens)
+                (async () => {
+                    if (args.topic)
+                        return ''; // Skip heavy layer for focused queries
+                    if (!workspaceRoot || !(0, feature_gate_1.isFeatureAllowed)('exportMap'))
+                        return '';
+                    try {
+                        const exportMap = (0, export_map_1.buildExportMap)(workspaceRoot);
+                        return exportMap.totalExports > 0 ? (0, export_map_1.formatExportMap)(exportMap) : '';
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+                // Layer 12: Architecture Graph (skip when topic is specific — saves tokens)
+                (async () => {
+                    if (args.topic)
+                        return ''; // Skip heavy layer for focused queries
+                    if (!workspaceRoot || !(0, feature_gate_1.isFeatureAllowed)('architectureGraph'))
+                        return '';
+                    try {
+                        const archGraph = (0, architecture_graph_1.buildArchitectureGraph)(workspaceRoot);
+                        return archGraph.totalFiles > 0 ? (0, architecture_graph_1.formatArchitectureGraph)(archGraph) : '';
+                    }
+                    catch {
+                        return '';
+                    }
+                })(),
+            ]);
+            // Collect results (in order) — only push non-empty strings
+            for (const result of parallelResults) {
+                if (result.status === 'fulfilled' && result.value) {
+                    parts.push('\n' + result.value);
                 }
             }
-            // ─── BRAIN LAYER 10: Knowledge Gaps (meta-memory) ────────────────
+            // ─── SMART CONTEXT SELECTION: Priority-based trimming ────────────
+            // Instead of dumb slicing, trim lowest-priority sections first
+            const MAX_CHARS = 12000; // ~3000 tokens — fits any model
+            let output = parts.join('\n');
+            if (output.length > MAX_CHARS) {
+                // Priority: highest first (kept), lowest first (trimmed)
+                // Layers 0-5 are high priority (welcome, sessions, corrections, core context)
+                // Layers 6-12 are lower priority (anticipation, temporal, git, topic, gaps, exports, arch)
+                // Trim from end (lowest priority) working backwards
+                while (output.length > MAX_CHARS && parts.length > 4) {
+                    parts.pop(); // Remove lowest-priority section
+                    output = parts.join('\n');
+                }
+                if (output.length > MAX_CHARS) {
+                    output = output.slice(0, MAX_CHARS);
+                }
+                output += '\n\n> (Some context trimmed to fit token budget. Use `recall_memory` for specific queries.)';
+            }
+            // Track usage stats
+            const memoriesInOutput = (output.match(/\[(?:CORRECTION|DECISION|CONVENTION|BUG_FIX|INSIGHT)\]/g) || []).length;
+            (0, usage_stats_1.trackRecall)(memoriesInOutput);
+            // Inject contextual instructions (DO/DON'T/WATCH-OUT)
             try {
-                const gaps = (0, meta_memory_1.detectKnowledgeGaps)(memoryStore, workspaceRoot || '');
-                const gapText = (0, meta_memory_1.formatKnowledgeGaps)(gaps);
-                if (gapText)
-                    parts.push('\n' + gapText);
+                const instructions = (0, instructions_generator_1.generateInstructions)(memoryStore);
+                const instructionText = (0, instructions_generator_1.formatInstructions)(instructions);
+                if (instructionText)
+                    output += '\n\n' + instructionText;
             }
             catch { /* non-fatal */ }
-            // ─── BRAIN LAYER 11: Export Map (anti-hallucination) ──────────────
-            if (workspaceRoot && (0, license_1.isPro)()) {
-                try {
-                    const exportMap = (0, export_map_1.buildExportMap)(workspaceRoot);
-                    if (exportMap.totalExports > 0) {
-                        const exportText = (0, export_map_1.formatExportMap)(exportMap);
-                        if (exportText)
-                            parts.push('\n' + exportText);
-                    }
-                }
-                catch { /* non-fatal */ }
+            // Inject tool recommendations (what to use based on context)
+            try {
+                const recs = (0, tool_recommender_1.recommendTools)({
+                    topic: args.topic,
+                    currentFile: args.currentFile,
+                    isNewConversation: true,
+                });
+                const recText = (0, tool_recommender_1.formatRecommendations)(recs);
+                if (recText)
+                    output += '\n\n' + recText;
             }
-            // ─── BRAIN LAYER 12: Architecture Graph (deep understanding) ──────
-            if (workspaceRoot && (0, license_1.isPro)()) {
-                try {
-                    const archGraph = (0, architecture_graph_1.buildArchitectureGraph)(workspaceRoot);
-                    if (archGraph.totalFiles > 0) {
-                        const archText = (0, architecture_graph_1.formatArchitectureGraph)(archGraph);
-                        if (archText)
-                            parts.push('\n' + archText);
-                    }
-                }
-                catch { /* non-fatal */ }
+            catch { /* non-fatal */ }
+            // Inject user preferences (adapts AI behavior)
+            try {
+                const prefText = (0, preference_learner_1.getStoredPreferences)(memoryStore);
+                if (prefText)
+                    output += '\n\n' + prefText;
             }
-            // ─── SMART CONTEXT SELECTION: Trim to token budget ───────────────
-            let output = parts.join('\n');
-            const MAX_CHARS = 12000; // ~3000 tokens — fits any model
-            if (output.length > MAX_CHARS) {
-                // Keep critical sections, trim lower-priority ones
-                output = output.slice(0, MAX_CHARS) + '\n\n> (Context trimmed to fit token budget. Use `recall_memory` for specific queries.)';
-            }
+            catch { /* non-fatal */ }
+            // Append stats footer (makes value visible — THE KEY TO ADDICTION)
+            const statsFooter = (0, usage_stats_1.formatStatsFooter)(memoryStore);
+            if (statsFooter)
+                output += statsFooter;
+            // Count corrections recalled as "saved you" moments
+            const correctionsRecalled = (output.match(/\[CORRECTION\]/g) || []).length;
+            for (let i = 0; i < correctionsRecalled; i++)
+                (0, usage_stats_1.trackSaved)();
+            // Cache the result for short-lived reuse
+            (0, memory_cache_1.setCache)(cacheKey, output);
             return {
                 jsonrpc: '2.0', id,
                 result: { content: [{ type: 'text', text: output }] },
@@ -1045,6 +1457,102 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             return {
                 jsonrpc: '2.0', id,
                 result: { content: [{ type: 'text', text: `Force recall error: ${err.message}` }], isError: true },
+            };
+        }
+    }
+    // ─── REVIEW CODE: Check against conventions + past bugs ─────────────
+    function handleReviewCode(id, args) {
+        try {
+            const code = args.code;
+            const filename = args.filename || '';
+            if (!code || code.length < 10) {
+                return {
+                    jsonrpc: '2.0', id,
+                    result: { content: [{ type: 'text', text: 'Error: provide code to review (min 10 chars)' }], isError: true },
+                };
+            }
+            const violations = [];
+            const suggestions = [];
+            const codeLower = code.toLowerCase();
+            // Check against stored CONVENTIONS
+            const conventions = memoryStore.getByType('CONVENTION', 100);
+            for (const conv of conventions) {
+                const intentLower = conv.intent.toLowerCase();
+                // Check for common pattern violations
+                if (intentLower.includes('never use') || intentLower.includes("don't use") || intentLower.includes('avoid')) {
+                    // Extract the forbidden thing
+                    const match = intentLower.match(/(?:never use|don't use|avoid)\s+(\w+(?:\s+\w+)?)/i);
+                    if (match) {
+                        const forbidden = match[1].toLowerCase();
+                        if (codeLower.includes(forbidden)) {
+                            violations.push(`⚠️ **Convention Violation** \`id:${conv.id}\`: "${conv.intent}" — Found \`${forbidden}\` in your code`);
+                        }
+                    }
+                }
+                if (intentLower.includes('always use') || intentLower.includes('must use')) {
+                    const match = intentLower.match(/(?:always use|must use)\s+(\w+(?:\s+\w+)?)/i);
+                    if (match) {
+                        const required = match[1].toLowerCase();
+                        if (!codeLower.includes(required) && code.length > 50) {
+                            suggestions.push(`💡 **Convention Suggestion** \`id:${conv.id}\`: "${conv.intent}" — Consider using \`${required}\``);
+                        }
+                    }
+                }
+            }
+            // Check against stored BUG_FIX patterns
+            const bugFixes = memoryStore.getByType('BUG_FIX', 50);
+            for (const bug of bugFixes) {
+                const bugLower = bug.intent.toLowerCase();
+                // Extract key terms from bug description
+                const bugTerms = bugLower.split(/\s+/).filter(w => w.length > 4);
+                const matchCount = bugTerms.filter(t => codeLower.includes(t)).length;
+                if (matchCount >= 3) {
+                    violations.push(`🐛 **Similar Bug Pattern** \`id:${bug.id}\`: "${bug.intent}" — This code has similarities to a past bug`);
+                }
+            }
+            // Check for CORRECTION patterns
+            const corrections = memoryStore.getByType('CORRECTION', 50);
+            for (const corr of corrections) {
+                const corrLower = corr.intent.toLowerCase();
+                const corrTerms = corrLower.split(/\s+/).filter(w => w.length > 4);
+                const matchCount = corrTerms.filter(t => codeLower.includes(t)).length;
+                if (matchCount >= 3) {
+                    violations.push(`🔄 **Past Correction Applies** \`id:${corr.id}\`: "${corr.intent}"`);
+                }
+            }
+            // File-specific memories
+            if (filename) {
+                const fileMemories = memoryStore.getByFile(filename, 10);
+                for (const fm of fileMemories) {
+                    suggestions.push(`📄 **File Note** \`id:${fm.id}\`: "${fm.intent}"`);
+                }
+            }
+            (0, usage_stats_1.trackReview)();
+            const lines = ['# Cortex Code Review\n'];
+            if (violations.length > 0) {
+                lines.push(`## ⚠️ ${violations.length} Issue${violations.length > 1 ? 's' : ''} Found\n`);
+                violations.forEach(v => lines.push(v));
+            }
+            if (suggestions.length > 0) {
+                lines.push(`\n## 💡 ${suggestions.length} Suggestion${suggestions.length > 1 ? 's' : ''}\n`);
+                suggestions.forEach(s => lines.push(s));
+            }
+            if (violations.length === 0 && suggestions.length === 0) {
+                lines.push('✅ **No issues found.** Code looks clean against your stored conventions and past bugs.');
+                lines.push(`\n_Checked against ${conventions.length} conventions, ${bugFixes.length} bug fixes, ${corrections.length} corrections._`);
+            }
+            else {
+                lines.push(`\n_Reviewed against ${conventions.length} conventions, ${bugFixes.length} bug fixes, ${corrections.length} corrections._`);
+            }
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text: lines.join('\n') }] },
+            };
+        }
+        catch (err) {
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text: `Review error: ${err.message}` }], isError: true },
             };
         }
     }
@@ -1188,8 +1696,8 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
     }
     async function handleAutoLearn(id, args) {
         try {
-            // PRO feature gate
-            if (!(0, license_1.isPro)()) {
+            // Feature gate (launch mode: all features unlocked)
+            if (!(0, feature_gate_1.isFeatureAllowed)('autoLearn')) {
                 return {
                     jsonrpc: '2.0', id,
                     result: { content: [{ type: 'text', text: (0, feature_gate_1.getUpgradeMessage)('auto_learn') }] },
@@ -1211,7 +1719,51 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 };
             }
             // Extract memory-worthy patterns (regex-based)
-            let extracted = (0, auto_learner_1.extractMemories)(text);
+            const extracted = (0, auto_learner_1.extractMemories)(text);
+            (0, usage_stats_1.trackAutoLearn)(); // Track for Brain Health Score + Streak
+            // SUCCESS DETECTION: capture proven approaches
+            try {
+                const successSignals = (0, success_tracker_1.detectSuccess)(text);
+                for (const signal of successSignals) {
+                    const successMemory = (0, success_tracker_1.buildSuccessMemory)(signal, text);
+                    extracted.push({
+                        type: 'INSIGHT',
+                        content: successMemory.intent,
+                        confidence: signal.confidence,
+                        reason: successMemory.reason,
+                    });
+                    (0, usage_stats_1.trackSuccess)();
+                }
+            }
+            catch { /* success detection failed — non-fatal */ }
+            // ERROR FINGERPRINT: capture error patterns for instant recall
+            try {
+                if ((0, error_learner_1.containsErrors)(text)) {
+                    const errorPatterns = (0, error_learner_1.extractErrorPatterns)(text);
+                    for (const ep of errorPatterns.slice(0, 3)) {
+                        extracted.push({
+                            type: 'BUG_FIX',
+                            content: ep.message,
+                            confidence: ep.confidence,
+                            reason: `Error pattern: ${ep.errorType} — auto-captured for instant fix recall`,
+                        });
+                        (0, usage_stats_1.trackErrorLearned)();
+                    }
+                }
+            }
+            catch { /* error learning failed — non-fatal */ }
+            // COMPLETION DETECTION: demote old memories about completed topics
+            try {
+                const completionSignals = (0, completion_resolver_1.detectCompletion)(text);
+                for (const signal of completionSignals) {
+                    const resolved = (0, completion_resolver_1.resolveRelatedMemories)(memoryStore, signal.topic, signal.confidence);
+                    if (resolved > 0) {
+                        console.log(`  🏁 Completion: "${signal.topic}" — demoted ${resolved} old memories`);
+                        (0, memory_cache_1.invalidateCache)();
+                    }
+                }
+            }
+            catch { /* completion detection failed — non-fatal */ }
             // LLM enhancement: when API key is available and regex found nothing,
             // use LLM to catch implicit patterns that keywords miss
             if (extracted.length === 0 && (0, llm_enhancer_1.isLLMAvailable)() && text.length > 50) {
@@ -1239,6 +1791,62 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 };
             }
             // Store each extracted memory + feed session tracker
+            // --- Helper: Independent importance scoring ---
+            function calculateImportance(item) {
+                // Base importance by type (corrections/bugs are more important than insights)
+                const TYPE_IMPORTANCE = {
+                    CORRECTION: 0.85, BUG_FIX: 0.85, CONVENTION: 0.80,
+                    DECISION: 0.75, GOTCHA: 0.75, BUSINESS_RULE: 0.70,
+                    FAILED_ATTEMPT: 0.65, CURRENT_TASK: 0.60, INSIGHT: 0.55,
+                };
+                let importance = TYPE_IMPORTANCE[item.type] || 0.60;
+                // Boost for content signals that indicate higher value
+                if (/\b(always|never|must|critical|important|breaking)\b/i.test(item.content))
+                    importance += 0.08;
+                if (/\b(error|bug|crash|fail|exception)\b/i.test(item.content))
+                    importance += 0.05;
+                if (/\.(ts|js|py|go|rs|java|tsx|jsx)\b/.test(item.content))
+                    importance += 0.03; // file-specific
+                if (/v?\d+\.\d+/.test(item.content))
+                    importance += 0.02; // version numbers
+                // Blend with regex confidence (40% type-based, 60% regex confidence)
+                importance = importance * 0.4 + item.confidence * 0.6;
+                return Math.min(importance, 1.0);
+            }
+            // --- Helper: Extract topic tags from content ---
+            function extractTopicTags(item) {
+                const tags = [item.type.toLowerCase()];
+                const content = item.content.toLowerCase();
+                // Extract technology/framework mentions
+                const techPatterns = /\b(react|vue|angular|next\.?js|node|express|typescript|javascript|python|rust|go|docker|kubernetes|postgres|mongodb|redis|graphql|rest|api|css|html|webpack|vite|eslint|git|npm|yarn)\b/gi;
+                const techMatches = item.content.match(techPatterns);
+                if (techMatches) {
+                    for (const tech of new Set(techMatches.map(t => t.toLowerCase()))) {
+                        tags.push(tech);
+                    }
+                }
+                // Extract file extensions as topic hints
+                const fileExts = content.match(/\.(ts|js|py|go|rs|java|tsx|jsx|css|html|json|yaml|yml|md)\b/g);
+                if (fileExts) {
+                    for (const ext of new Set(fileExts)) {
+                        tags.push(ext.replace('.', ''));
+                    }
+                }
+                // Extract key action verbs as context
+                if (/\b(migrat|switch|chang|replac|upgrad|delet|remov)\w*/i.test(content))
+                    tags.push('migration');
+                if (/\b(test|spec|assert|expect|mock)\b/i.test(content))
+                    tags.push('testing');
+                if (/\b(deploy|ci|cd|pipeline|build|release)\b/i.test(content))
+                    tags.push('devops');
+                if (/\b(auth|login|token|session|permission|role)\b/i.test(content))
+                    tags.push('auth');
+                if (/\b(database|query|schema|table|index|sql)\b/i.test(content))
+                    tags.push('database');
+                if (/\b(performance|speed|slow|fast|optimize|cache)\b/i.test(content))
+                    tags.push('performance');
+                return [...new Set(tags)].slice(0, 8); // Cap at 8 tags
+            }
             const stored = [];
             const skipped = [];
             for (const item of extracted) {
@@ -1267,11 +1875,11 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                     const result = (0, memory_quality_1.storeWithQuality)(memoryStore, {
                         type: item.type,
                         intent: item.content,
-                        action: item.content,
+                        action: `auto_learn:${item.type.toLowerCase()}`,
                         reason: item.reason,
                         confidence: item.confidence,
-                        importance: item.confidence,
-                        tags: [item.type.toLowerCase()],
+                        importance: calculateImportance(item),
+                        tags: extractTopicTags(item),
                     });
                     if (result.stored) {
                         stored.push(`[${item.type}] ${item.content.slice(0, 60)}${item.content.length > 60 ? '…' : ''}`);
@@ -1286,6 +1894,137 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             }
             if (stored.length > 0) {
                 (0, memory_cache_1.invalidateCache)();
+                for (let i = 0; i < stored.length; i++)
+                    (0, usage_stats_1.trackStore)();
+            }
+            // ─── Auto-correction capture ─────────────────────────────────────
+            // Scan AI text for self-corrections ("I apologize", "you're right")
+            const aiCorrections = (0, correction_detector_1.detectAIAcknowledgments)(text);
+            for (const corr of aiCorrections) {
+                try {
+                    const corrResult = (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                        type: 'CORRECTION',
+                        intent: `[AUTO-DETECTED] ${corr.fullContext}`,
+                        action: corr.fullContext,
+                        reason: `AI self-correction detected (confidence: ${corr.confidence})`,
+                        confidence: corr.confidence,
+                        importance: 0.90, // High importance — corrections prevent repeats
+                        tags: ['auto-correction', 'ai-acknowledgment'],
+                    });
+                    if (corrResult.stored) {
+                        stored.push(`[CORRECTION] ${corr.fullContext.slice(0, 60)}…`);
+                    }
+                }
+                catch { /* skip */ }
+            }
+            // Scan user context for direct corrections ("no, use X not Y")
+            const userContext = args.context;
+            if (userContext && userContext.length > 10) {
+                const userCorrections = (0, correction_detector_1.detectUserCorrections)(userContext);
+                for (const corr of userCorrections) {
+                    try {
+                        const content = corr.corrected
+                            ? `User correction: use "${corr.corrected}"${corr.original ? ` instead of "${corr.original}"` : ''}`
+                            : `User correction: ${corr.fullContext}`;
+                        const corrResult = (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                            type: 'CORRECTION',
+                            intent: content,
+                            action: corr.fullContext,
+                            reason: `User correction detected (confidence: ${corr.confidence})`,
+                            confidence: corr.confidence,
+                            importance: 0.95, // Very high — user corrections are gospel
+                            tags: ['auto-correction', 'user-correction'],
+                        });
+                        if (corrResult.stored) {
+                            stored.push(`[USER CORRECTION] ${content.slice(0, 60)}…`);
+                            (0, memory_cache_1.invalidateCache)();
+                        }
+                    }
+                    catch { /* skip */ }
+                }
+                // ─── Preference learning ─────────────────────────────────
+                const prefs = (0, preference_learner_1.detectPreferences)(userContext);
+                for (const pref of prefs) {
+                    try {
+                        const prefResult = (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                            type: 'CONVENTION',
+                            intent: pref.preference,
+                            action: `Detected from: "${pref.evidence}"`,
+                            reason: `User preference auto-detected (${pref.category})`,
+                            confidence: pref.confidence,
+                            importance: 0.85,
+                            tags: ['preference', pref.category],
+                        });
+                        if (prefResult.stored) {
+                            stored.push(`[PREFERENCE] ${pref.preference.slice(0, 60)}…`);
+                            (0, memory_cache_1.invalidateCache)();
+                        }
+                    }
+                    catch { /* skip */ }
+                }
+            }
+            // ─── Build error learning ──────────────────────────────────
+            // Scan for TS errors, test failures in AI text
+            if ((0, error_learner_1.containsErrors)(text)) {
+                const errorPatterns = (0, error_learner_1.extractErrorPatterns)(text);
+                // Extract verification steps for regression prevention
+                const verifySteps = (0, regression_guard_1.extractVerificationSteps)(text);
+                for (const ep of errorPatterns) {
+                    try {
+                        const baseAction = `Auto-captured from build/test output`;
+                        const actionWithVerify = (0, regression_guard_1.attachVerification)(baseAction, verifySteps);
+                        const errResult = (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                            type: 'BUG_FIX',
+                            intent: `[ERROR PATTERN] ${ep.errorType}: ${ep.message}`,
+                            action: actionWithVerify,
+                            reason: `Error pattern auto-detected — avoid this in future`,
+                            confidence: ep.confidence,
+                            importance: 0.90,
+                            tags: ['error-pattern', ep.errorType.toLowerCase(), 'auto-detected'],
+                        });
+                        if (errResult.stored) {
+                            stored.push(`[ERROR LEARNED] ${ep.errorType}: ${ep.message.slice(0, 50)}…`);
+                            (0, memory_cache_1.invalidateCache)();
+                        }
+                    }
+                    catch { /* skip */ }
+                }
+            }
+            // ─── Success reinforcement ─────────────────────────────────
+            // Scan user context for praise/success signals
+            if (userContext && userContext.length > 5) {
+                const successSignals = (0, success_tracker_1.detectSuccess)(userContext);
+                for (const signal of successSignals) {
+                    try {
+                        const mem = (0, success_tracker_1.buildSuccessMemory)(signal, text);
+                        const successResult = (0, memory_quality_1.storeWithQuality)(memoryStore, {
+                            type: 'INSIGHT',
+                            intent: mem.intent,
+                            action: text.slice(0, 200),
+                            reason: mem.reason,
+                            confidence: signal.confidence,
+                            importance: 0.80,
+                            tags: mem.tags,
+                        });
+                        if (successResult.stored) {
+                            stored.push(`[SUCCESS] Proven approach stored from: "${signal.trigger}"`);
+                            (0, memory_cache_1.invalidateCache)();
+                        }
+                    }
+                    catch { /* skip */ }
+                }
+            }
+            // ─── File relationship tracking ────────────────────────────
+            // Track files mentioned in context for co-edit detection
+            if (userContext) {
+                const filePatterns = userContext.match(/[\w-]+\.\w{1,5}/g) || [];
+                const codeFileExts = new Set(['ts', 'tsx', 'js', 'jsx', 'css', 'py', 'go', 'rs', 'java']);
+                for (const f of filePatterns) {
+                    const ext = f.split('.').pop()?.toLowerCase() || '';
+                    if (codeFileExts.has(ext)) {
+                        (0, file_relationships_1.recordFileEdit)(f);
+                    }
+                }
             }
             const lines = ['**Auto-Learn Results:**'];
             if (stored.length > 0) {
@@ -1369,9 +2108,9 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
                 `| Metric | Value |`,
                 `|--------|-------|`,
                 `| Active Memories | ${activeCount} |`,
-                `| Session Store Count | ${stats.storeCount}/30 |`,
-                `| Session Auto-Learn Count | ${stats.autoLearnCount}/100 |`,
-                `| Session Total Calls | ${stats.totalCalls}/500 |`,
+                `| Session Store Count | ${stats.storeCount}/100 |`,
+                `| Session Auto-Learn Count | ${stats.autoLearnCount}/500 |`,
+                `| Session Total Calls | ${stats.totalCalls}/2000 |`,
                 `| Uptime | ${Math.floor(stats.uptime / 60)}m ${stats.uptime % 60}s |`,
                 `| Status | Healthy |`,
             ];
@@ -1384,6 +2123,101 @@ function createMCPHandler(memoryStore, eventLog, workspaceRoot) {
             return {
                 jsonrpc: '2.0', id,
                 result: { content: [{ type: 'text', text: `Health check error: ${err.message}` }], isError: true },
+            };
+        }
+    }
+    // ─── Pre-Flight Check Handler ───────────────────────────────────────────────
+    function handlePreCheck(id, args) {
+        try {
+            // Track file for relationship mapping
+            if (args.filename)
+                (0, file_relationships_1.recordFileEdit)(args.filename);
+            const result = (0, pre_flight_1.preFlightCheck)(memoryStore, args.filename, args.task);
+            let text = (0, pre_flight_1.formatPreFlight)(result);
+            // Add file relationship warnings
+            if (args.filename) {
+                const warnings = (0, file_relationships_1.checkMissingRelated)(args.filename, memoryStore);
+                if (warnings.length > 0) {
+                    text += '\n\n## 🔗 File Relationships\n';
+                    warnings.forEach(w => text += w + '\n');
+                }
+            }
+            // Add architecture context — show file's role in the system
+            if (args.filename && workspaceRoot) {
+                try {
+                    const archGraph = (0, architecture_graph_1.buildArchitectureGraph)(workspaceRoot);
+                    const basename = args.filename.replace(/\\/g, '/').split('/').pop() || args.filename;
+                    // nodes is Map<string, ArchNode> — find by key ending with basename
+                    let deps = null;
+                    for (const [key, node] of archGraph.nodes) {
+                        if (key.endsWith(basename)) {
+                            deps = node;
+                            break;
+                        }
+                    }
+                    if (deps && (deps.imports?.length > 0 || deps.importedBy?.length > 0)) {
+                        text += '\n\n## \ud83c\udfd7\ufe0f Architecture Context';
+                        if (deps.imports?.length > 0) {
+                            text += `\n**Imports from:** ${deps.imports.slice(0, 10).join(', ')}`;
+                        }
+                        if (deps.importedBy?.length > 0) {
+                            text += `\n**Imported by:** ${deps.importedBy.slice(0, 10).join(', ')}`;
+                        }
+                    }
+                }
+                catch { /* non-fatal */ }
+            }
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text }] },
+            };
+        }
+        catch (err) {
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text: `Pre-check error: ${err.message}` }], isError: true },
+            };
+        }
+    }
+    // ─── Impact Analysis Handler ───────────────────────────────────────────────
+    function handleCheckImpact(id, args) {
+        try {
+            const file = args.file;
+            if (!file) {
+                return {
+                    jsonrpc: '2.0', id,
+                    result: { content: [{ type: 'text', text: 'Error: file parameter is required' }], isError: true },
+                };
+            }
+            const wsRoot = args.workspaceRoot || process.cwd();
+            const result = (0, impact_analyzer_1.analyzeImpact)(file, wsRoot);
+            const text = (0, impact_analyzer_1.formatImpact)(result);
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text }] },
+            };
+        }
+        catch (err) {
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text: `Impact analysis error: ${err.message}` }], isError: true },
+            };
+        }
+    }
+    // ─── Resume Work Handler ───────────────────────────────────────────────────
+    function handleResumeWork(id) {
+        try {
+            const ctx = (0, resume_work_1.buildResumeContext)(memoryStore);
+            const text = (0, resume_work_1.formatResumeContext)(ctx);
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text }] },
+            };
+        }
+        catch (err) {
+            return {
+                jsonrpc: '2.0', id,
+                result: { content: [{ type: 'text', text: `Resume work error: ${err.message}` }], isError: true },
             };
         }
     }

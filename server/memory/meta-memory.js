@@ -49,9 +49,9 @@ const path = __importStar(require("path"));
 /** Detect knowledge gaps in the project */
 function detectKnowledgeGaps(memoryStore, workspaceRoot) {
     const gaps = [];
-    // Get all memories' related files
+    // Get all memories' related files — use smaller limit since we only need file refs
     const knownFiles = new Set();
-    const active = memoryStore.getActive(500);
+    const active = memoryStore.getActive(200);
     for (const m of active) {
         if (m.relatedFiles) {
             for (const f of m.relatedFiles) {
@@ -59,7 +59,7 @@ function detectKnowledgeGaps(memoryStore, workspaceRoot) {
             }
         }
         // Also check intent for file references
-        const fileRefs = m.intent.match(/[\w\-\/]+\.(ts|js|tsx|jsx|py|css|json|sql)/g);
+        const fileRefs = m.intent.match(/[\w\-/]+\.(ts|js|tsx|jsx|py|css|json|sql)/g);
         if (fileRefs) {
             for (const ref of fileRefs) {
                 knownFiles.add(normalize(ref));

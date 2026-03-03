@@ -21,9 +21,8 @@ function anticipate(memoryStore, currentFile) {
     // 2. Directory memories — same folder = likely related
     const dir = currentFile.replace(/[\\/][^\\/]+$/, '');
     if (dir && dir !== currentFile) {
-        const allActive = memoryStore.getActive(200);
-        const dirMemories = allActive.filter(m => m.relatedFiles?.some(f => f.startsWith(dir) || f.includes(dir)));
-        result.directoryMemories = dirMemories.slice(0, 5).map((m, i) => ({
+        const dirMemories = memoryStore.getByDirectory(dir, 5);
+        result.directoryMemories = dirMemories.map((m, i) => ({
             memory: m,
             score: 0.7 - (i * 0.05),
             matchMethod: 'anticipation:directory',
@@ -43,13 +42,22 @@ function anticipate(memoryStore, currentFile) {
         };
         const keywords = typeKeywords[ext];
         if (keywords) {
-            const conventions = memoryStore.getByType(types_1.MemoryType.CONVENTION, 50);
-            const matched = conventions.filter(c => keywords.some(k => c.intent.toLowerCase().includes(k)));
-            result.relatedTypeMemories = matched.slice(0, 3).map((m, i) => ({
-                memory: m,
-                score: 0.5 - (i * 0.05),
-                matchMethod: 'anticipation:filetype',
-            }));
+            // Use FTS search for keywords instead of loading all conventions and filtering in JS
+            const searchQuery = keywords.join(' OR ');
+            try {
+                const ftsResults = memoryStore.searchFTS(searchQuery, 10);
+                const matched = ftsResults
+                    .filter(r => r.memory.type === types_1.MemoryType.CONVENTION)
+                    .slice(0, 3);
+                result.relatedTypeMemories = matched.map((r, i) => ({
+                    memory: r.memory,
+                    score: 0.5 - (i * 0.05),
+                    matchMethod: 'anticipation:filetype',
+                }));
+            }
+            catch {
+                // FTS failed — fallback silently
+            }
         }
     }
     return result;

@@ -79,17 +79,18 @@ function formatHotCorrections(memoryStore) {
     }
     return lines.join('\n');
 }
+/** Module-level stopwords set — avoid recreation per call */
+const TOPIC_STOP_WORDS = new Set([
+    'the', 'a', 'an', 'is', 'was', 'are', 'were', 'to', 'of', 'in', 'for',
+    'on', 'with', 'at', 'by', 'from', 'it', 'this', 'that', 'and', 'or',
+    'but', 'not', 'do', 'does', 'did', 'don', 'dont', 'use', 'using',
+    'should', 'must', 'never', 'always', 'avoid', 'instead',
+]);
 /** Extract meaningful topic words from correction text */
 function extractTopicWords(text) {
-    const stopWords = new Set([
-        'the', 'a', 'an', 'is', 'was', 'are', 'were', 'to', 'of', 'in', 'for',
-        'on', 'with', 'at', 'by', 'from', 'it', 'this', 'that', 'and', 'or',
-        'but', 'not', 'do', 'does', 'did', 'don', 'dont', 'use', 'using',
-        'should', 'must', 'never', 'always', 'avoid', 'instead',
-    ]);
     return text.toLowerCase()
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
-        .filter(w => w.length > 3 && !stopWords.has(w));
+        .filter(w => w.length > 3 && !TOPIC_STOP_WORDS.has(w));
 }
 //# sourceMappingURL=learning-rate.js.map

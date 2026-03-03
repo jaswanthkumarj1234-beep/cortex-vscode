@@ -17,7 +17,5 @@ export declare class HybridRetriever {
     private mergeResults;
     /** Apply query filters */
     private applyFilters;
-    /** Clean user query for FTS5 syntax */
-    private cleanFTSQuery;
 }
 //# sourceMappingURL=hybrid-retriever.d.ts.map

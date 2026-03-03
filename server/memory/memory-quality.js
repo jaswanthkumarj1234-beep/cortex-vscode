@@ -4,6 +4,10 @@ exports.qualityCheck = qualityCheck;
 exports.findContradiction = findContradiction;
 exports.storeWithQuality = storeWithQuality;
 const types_1 = require("../types");
+/** Module-level stopwords for contradiction detection — avoid recreation per call */
+const CONTRADICTION_STOP_WORDS = new Set([
+    'should', 'would', 'could', 'about', 'their', 'these', 'those', 'which', 'there', 'where', 'while'
+]);
 // --- Quality Gate ---
 const TOO_GENERIC = new Set([
     'use best practices',
@@ -20,7 +24,7 @@ const TOO_GENERIC = new Set([
  * Check if a memory is worth storing.
  * Returns null if good, or a rejection reason if bad.
  */
-function qualityCheck(intent, type) {
+function qualityCheck(intent, _type) {
     // Too short
     if (!intent || intent.trim().length < 15) {
         return 'Too short (< 15 chars)';
@@ -142,12 +146,11 @@ function findContradiction(memoryStore, newIntent, newType) {
         for (const existing of decisions) {
             const existLower = existing.intent.toLowerCase();
             // Extract key nouns (words > 4 chars, not stopwords)
-            const stopwords = new Set(['should', 'would', 'could', 'about', 'their', 'these', 'those', 'which', 'there', 'where', 'while']);
-            const newNouns = newLower.split(/\s+/).filter(w => w.length > 4 && !stopwords.has(w));
-            const existNouns = existLower.split(/\s+/).filter(w => w.length > 4 && !stopwords.has(w));
-            // Count overlapping nouns
+            const newNouns = newLower.split(/\s+/).filter(w => w.length > 4 && !CONTRADICTION_STOP_WORDS.has(w));
+            const existNouns = existLower.split(/\s+/).filter(w => w.length > 4 && !CONTRADICTION_STOP_WORDS.has(w));
+            // Count overlapping nouns — require 3+ to reduce false positives
             const overlap = newNouns.filter(w => existNouns.includes(w));
-            if (overlap.length >= 2) {
+            if (overlap.length >= 3) {
                 // Same topic detected. Check if conclusion differs.
                 // Simple: if both are decisions about the same topic, flag it
                 return {

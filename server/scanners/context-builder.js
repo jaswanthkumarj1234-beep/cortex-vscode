@@ -12,16 +12,25 @@ class ContextBuilder {
     build(options) {
         const maxChars = options?.maxChars || config_1.CONFIG.MAX_CONTEXT_CHARS;
         const parts = [];
+        // Single query: fetch all active memories, then filter resolved + bucket by type
+        const allMemories = this.memoryStore.getActive(500)
+            .filter(m => !m.tags?.includes('resolved')); // Skip resolved/completed topics
+        const byType = new Map();
+        for (const m of allMemories) {
+            const arr = byType.get(m.type) || [];
+            arr.push(m);
+            byType.set(m.type, arr);
+        }
         // 1. ALL Corrections (highest priority — prevent repeated mistakes)
-        const corrections = this.memoryStore.getByType(types_1.MemoryType.CORRECTION, 500);
+        const corrections = byType.get(types_1.MemoryType.CORRECTION) || [];
         if (corrections.length > 0) {
             parts.push('## Corrections (DO NOT repeat these mistakes)');
             for (const c of corrections) {
-                parts.push(`- ${c.intent}${c.reason ? ` (${c.reason})` : ''}`);
+                parts.push(`- ${c.intent}${c.reason ? ` — ${c.reason}` : ''}`);
             }
         }
         // 2. ALL Decisions (architectural choices)
-        const decisions = this.memoryStore.getByType(types_1.MemoryType.DECISION, 500);
+        const decisions = byType.get(types_1.MemoryType.DECISION) || [];
         if (decisions.length > 0) {
             parts.push('\n## Decisions');
             for (const d of decisions) {
@@ -29,15 +38,15 @@ class ContextBuilder {
             }
         }
         // 3. ALL Conventions (coding standards)
-        const conventions = this.memoryStore.getByType(types_1.MemoryType.CONVENTION, 500);
+        const conventions = byType.get(types_1.MemoryType.CONVENTION) || [];
         if (conventions.length > 0) {
             parts.push('\n## Conventions');
             for (const c of conventions) {
-                parts.push(`- ${c.intent}`);
+                parts.push(`- ${c.intent}${c.reason ? ` — ${c.reason}` : ''}`);
             }
         }
         // 4. ALL Bug Fixes (prevent re-introducing bugs)
-        const bugFixes = this.memoryStore.getByType(types_1.MemoryType.BUG_FIX, 500);
+        const bugFixes = byType.get(types_1.MemoryType.BUG_FIX) || [];
         if (bugFixes.length > 0) {
             parts.push('\n## Bug Fixes (already solved — do not re-introduce)');
             for (const b of bugFixes) {
@@ -45,7 +54,7 @@ class ContextBuilder {
             }
         }
         // 5. Failed Suggestions (things that were tried and didn't work)
-        const failed = this.memoryStore.getByType(types_1.MemoryType.FAILED_SUGGESTION, 50);
+        const failed = byType.get(types_1.MemoryType.FAILED_SUGGESTION) || [];
         if (failed.length > 0) {
             parts.push('\n## Failed Attempts (DO NOT suggest these again)');
             for (const f of failed.slice(0, 10)) {
@@ -53,7 +62,7 @@ class ContextBuilder {
             }
         }
         // 6. Proven Patterns (things that work well)
-        const patterns = this.memoryStore.getByType(types_1.MemoryType.PROVEN_PATTERN, 50);
+        const patterns = byType.get(types_1.MemoryType.PROVEN_PATTERN) || [];
         if (patterns.length > 0) {
             parts.push('\n## Proven Patterns');
             for (const p of patterns.slice(0, 10)) {
@@ -70,11 +79,11 @@ class ContextBuilder {
                 }
             }
         }
-        // 5. Dependencies (what the project uses)
-        const deps = this.memoryStore.getByType(types_1.MemoryType.DEPENDENCY, 3);
+        // 8. Dependencies (what the project uses)
+        const deps = byType.get(types_1.MemoryType.DEPENDENCY) || [];
         if (deps.length > 0) {
             parts.push('\n## Stack');
-            for (const d of deps) {
+            for (const d of deps.slice(0, 3)) {
                 parts.push(`- ${d.intent}`);
             }
         }

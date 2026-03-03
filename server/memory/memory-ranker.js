@@ -29,9 +29,11 @@ function rankResults(ftsResults, vectorResults, maxResults, currentFile) {
         const recencyBoost = ageMs < DAY ? 1.5 : ageMs < 7 * DAY ? 1.2 : 1.0;
         // NEW: File-aware boost — if memory is related to current file, boost 1.5x
         const fileBoost = currentFile && r.memory.relatedFiles?.some((f) => f.includes(currentFile) || currentFile.includes(f)) ? 1.5 : 1.0;
+        // NEW: Resolved penalty — completed/resolved memories score much lower
+        const resolvedPenalty = r.memory.tags?.includes('resolved') ? 0.15 : 1.0;
         merged.push({
             memory: r.memory,
-            score: r.score * boost * accessBoost * recencyBoost * fileBoost,
+            score: r.score * boost * accessBoost * recencyBoost * fileBoost * resolvedPenalty,
         });
     }
     for (const r of vectorResults) {
@@ -43,9 +45,11 @@ function rankResults(ftsResults, vectorResults, maxResults, currentFile) {
         const ageMs = now - (r.memory.createdAt || r.memory.timestamp || 0);
         const recencyBoost = ageMs < DAY ? 1.5 : ageMs < 7 * DAY ? 1.2 : 1.0;
         const fileBoost = currentFile && r.memory.relatedFiles?.some((f) => f.includes(currentFile) || currentFile.includes(f)) ? 1.5 : 1.0;
+        // Resolved penalty (same as FTS block)
+        const resolvedPenalty = r.memory.tags?.includes('resolved') ? 0.15 : 1.0;
         merged.push({
             memory: r.memory,
-            score: r.score * boost * accessBoost * recencyBoost * fileBoost,
+            score: r.score * boost * accessBoost * recencyBoost * fileBoost * resolvedPenalty,
         });
     }
     merged.sort((a, b) => b.score - a.score);

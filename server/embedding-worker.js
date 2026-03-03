@@ -52,7 +52,7 @@ async function loadModel() {
         const { pipeline: createPipeline } = await Promise.resolve().then(() => __importStar(require('@xenova/transformers')));
         pipeline = await createPipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
             quantized: true,
-            progress_callback: (x) => { }, // SILENCE PROGRESS BARS
+            progress_callback: (_x) => { }, // SILENCE PROGRESS BARS
         });
         modelReady = true;
         worker_threads_1.parentPort?.postMessage({ type: 'ready' });

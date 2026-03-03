@@ -48,15 +48,32 @@ const config_1 = require("../config/config");
 let embeddingWorker = null;
 let workerReady = false;
 const pendingEmbeddings = new Map();
+let workerFailed = false;
 function startEmbeddingWorker() {
+    // Eagerly boot worker on startup to avoid 5-10s latency on first use
+    if (!ensureWorkerStarted()) {
+        console.log('  [cortex-mcp] Embedding worker unavailable, running FTS-only mode');
+    }
+}
+function ensureWorkerStarted() {
+    if (embeddingWorker)
+        return true;
+    if (workerFailed)
+        return false;
     try {
         // Worker compiles to dist/embedding-worker.js, manager is in dist/memory/
         const workerPath = path.join(__dirname, '..', 'embedding-worker.js');
         if (!fs.existsSync(workerPath)) {
             console.log('  [cortex-mcp] Embedding worker not found, running FTS-only mode');
-            return;
+            workerFailed = true;
+            return false;
         }
-        embeddingWorker = new worker_threads_1.Worker(workerPath);
+        embeddingWorker = new worker_threads_1.Worker(workerPath, {
+            resourceLimits: {
+                maxOldGenerationSizeMb: 512,
+                maxYoungGenerationSizeMb: 32,
+            },
+        });
         embeddingWorker.on('message', (msg) => {
             if (msg.type === 'ready') {
                 workerReady = true;
@@ -80,16 +97,46 @@ function startEmbeddingWorker() {
         embeddingWorker.on('error', (err) => {
             console.error('  [cortex-mcp] Embedding worker error:', err.message);
             workerReady = false;
+            workerFailed = true;
+            embeddingWorker = null;
+            // Reject all pending embeddings
+            for (const [_id, pending] of pendingEmbeddings) {
+                pending.reject(new Error('Worker crashed'));
+            }
+            pendingEmbeddings.clear();
         });
-        console.log('  [cortex-mcp] Loading embedding model in background...');
+        embeddingWorker.on('exit', (code) => {
+            if (code !== 0) {
+                console.error(`  [cortex-mcp] Embedding worker exited with code ${code} (likely OOM), falling back to FTS-only`);
+                workerReady = false;
+                workerFailed = true;
+                embeddingWorker = null;
+                // Reject all pending embeddings
+                for (const [_id, pending] of pendingEmbeddings) {
+                    pending.reject(new Error('Worker exited'));
+                }
+                pendingEmbeddings.clear();
+            }
+        });
+        console.log('  [cortex-mcp] Starting embedding model in background...');
+        return true;
     }
     catch (err) {
         console.log('  [cortex-mcp] Could not start embedding worker:', err.message);
+        workerFailed = true;
+        return false;
     }
 }
 function embedText(text) {
     return new Promise((resolve, reject) => {
-        if (!embeddingWorker || !workerReady) {
+        // Lazy start: spin up worker on first embedding request
+        if (!embeddingWorker) {
+            if (!ensureWorkerStarted()) {
+                reject(new Error('Worker not available'));
+                return;
+            }
+        }
+        if (!workerReady) {
             reject(new Error('Worker not ready'));
             return;
         }
@@ -102,6 +149,10 @@ function embedText(text) {
             resolve: (v) => { clearTimeout(timeout); resolve(v); },
             reject: (e) => { clearTimeout(timeout); reject(e); },
         });
+        if (!embeddingWorker) {
+            reject(new Error('Worker disappeared'));
+            return;
+        }
         embeddingWorker.postMessage({ type: 'embed', id, text });
     });
 }

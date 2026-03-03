@@ -1,18 +1,4 @@
 "use strict";
-/**
- * LLM Enhancer — Optional LLM-powered memory enrichment.
- *
- * When the user provides an API key (OPENAI_API_KEY or CORTEX_LLM_KEY),
- * this module uses an LLM to:
- *   1. Better classify memories (vs. keyword matching)
- *   2. Extract richer insights from commit messages
- *   3. Generate smart tags and connections
- *   4. Summarize and merge related memories
- *
- * When no API key is available, falls back to keyword-based classification.
- * This ensures Cortex works for EVERYONE — free without an API key,
- * but smarter WITH one.
- */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -51,32 +37,76 @@ exports.isLLMAvailable = isLLMAvailable;
 exports.getLLMProvider = getLLMProvider;
 exports.enhanceMemory = enhanceMemory;
 exports.summarizeMemories = summarizeMemories;
+/**
+ * LLM Enhancer — Optional LLM-powered memory enrichment.
+ *
+ * Supports multiple LLM providers:
+ *   1. OpenRouter (FREE models available!) — OPENROUTER_API_KEY
+ *   2. OpenAI — OPENAI_API_KEY
+ *   3. Anthropic — ANTHROPIC_API_KEY
+ *   4. Any OpenAI-compatible API — CORTEX_LLM_KEY + CORTEX_LLM_BASE_URL
+ *
+ * When the user provides an API key, this module uses an LLM to:
+ *   1. Better classify memories (vs. keyword matching)
+ *   2. Extract richer insights from conversations
+ *   3. Generate smart tags and connections
+ *   4. Summarize and merge related memories
+ *
+ * When no API key is available, falls back to keyword-based classification.
+ * This ensures Cortex works for EVERYONE — free without an API key,
+ * but smarter WITH one.
+ *
+ * === HOW TO GET A FREE OPENROUTER KEY ===
+ * 1. Go to https://openrouter.ai/keys
+ * 2. Create a free account
+ * 3. Generate an API key (free tier included)
+ * 4. Set: OPENROUTER_API_KEY=sk-or-v1-... in your environment
+ * 5. Cortex will automatically use free models for smarter memory extraction!
+ */
+const extract_tags_1 = require("../utils/extract-tags");
 const https = __importStar(require("https"));
 const http = __importStar(require("http"));
 // ─── Config Detection ─────────────────────────────────────────────────────────
 function detectLLMConfig() {
-    // Check multiple API key sources
+    // 1. OpenRouter (RECOMMENDED — has free models!)
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+    if (openrouterKey) {
+        return {
+            apiKey: openrouterKey,
+            model: process.env.CORTEX_LLM_MODEL || 'meta-llama/llama-4-scout:free',
+            baseUrl: 'https://openrouter.ai/api',
+            maxTokens: 200,
+            provider: 'openrouter',
+            extraHeaders: {
+                'HTTP-Referer': 'https://github.com/jaswanthkumarj1234-beep/cortex-mcp',
+                'X-Title': 'Cortex MCP',
+            },
+        };
+    }
+    // 2. Check other API key sources
     const apiKey = process.env.OPENAI_API_KEY
         || process.env.CORTEX_LLM_KEY
         || process.env.ANTHROPIC_API_KEY
         || null;
     if (!apiKey)
         return null;
-    // Detect which provider based on key prefix
+    // 3. Anthropic
     if (apiKey.startsWith('sk-ant-')) {
         return {
             apiKey,
             model: process.env.CORTEX_LLM_MODEL || 'claude-3-haiku-20240307',
             baseUrl: 'https://api.anthropic.com',
             maxTokens: 200,
+            provider: 'anthropic',
         };
     }
-    // Default to OpenAI-compatible (works with OpenAI, OpenRouter, local)
+    // 4. Default to OpenAI-compatible (works with OpenAI, local, etc.)
     return {
         apiKey,
         model: process.env.CORTEX_LLM_MODEL || 'gpt-4o-mini',
         baseUrl: process.env.CORTEX_LLM_BASE_URL || 'https://api.openai.com',
         maxTokens: 200,
+        provider: 'openai',
     };
 }
 // ─── LLM Call ─────────────────────────────────────────────────────────────────
@@ -89,16 +119,21 @@ function callOpenAI(config, prompt) {
             max_tokens: config.maxTokens,
             temperature: 0.1,
         });
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+            'Content-Length': Buffer.byteLength(body),
+        };
+        // Add provider-specific headers (OpenRouter requires HTTP-Referer and X-Title)
+        if (config.extraHeaders) {
+            Object.assign(headers, config.extraHeaders);
+        }
         const options = {
             hostname: url.hostname,
             port: url.port || 443,
             path: url.pathname,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.apiKey}`,
-                'Content-Length': Buffer.byteLength(body),
-            },
+            headers,
         };
         const transport = url.protocol === 'https:' ? https : http;
         const req = transport.request(options, (res) => {
@@ -107,6 +142,10 @@ function callOpenAI(config, prompt) {
             res.on('end', () => {
                 try {
                     const json = JSON.parse(data);
+                    if (json.error) {
+                        reject(new Error(`LLM API error: ${json.error.message || JSON.stringify(json.error)}`));
+                        return;
+                    }
                     const content = json.choices?.[0]?.message?.content || '';
                     resolve(content.trim());
                 }
@@ -116,7 +155,7 @@ function callOpenAI(config, prompt) {
             });
         });
         req.on('error', reject);
-        req.setTimeout(10000, () => {
+        req.setTimeout(15000, () => {
             req.destroy();
             reject(new Error('LLM request timeout'));
         });
@@ -141,27 +180,6 @@ function classifyByKeywords(text) {
         return 'BUG_FIX';
     return 'DECISION';
 }
-function extractKeywordTags(text) {
-    const tags = [];
-    const lower = text.toLowerCase();
-    const patterns = [
-        [/\b(auth|login|session|token|jwt|oauth)\b/, 'auth'],
-        [/\b(database|sql|query|migration|schema)\b/, 'database'],
-        [/\b(api|endpoint|route|rest|graphql)\b/, 'api'],
-        [/\b(ui|component|render|style|css|html)\b/, 'ui'],
-        [/\b(test|spec|mock|assert|coverage)\b/, 'testing'],
-        [/\b(deploy|ci|cd|pipeline|docker|k8s)\b/, 'devops'],
-        [/\b(security|encrypt|permission|vulnerability)\b/, 'security'],
-        [/\b(perf|optimize|cache|speed|memory)\b/, 'performance'],
-        [/\b(config|env|setting|option)\b/, 'config'],
-        [/\b(error|exception|crash|debug|log)\b/, 'error-handling'],
-    ];
-    for (const [pattern, tag] of patterns) {
-        if (pattern.test(lower))
-            tags.push(tag);
-    }
-    return tags;
-}
 // ─── Public API ───────────────────────────────────────────────────────────────
 let _config = undefined;
 let _available = undefined;
@@ -181,7 +199,9 @@ function isLLMAvailable() {
 function getLLMProvider() {
     if (!isLLMAvailable() || !_config)
         return 'none';
-    if (_config.baseUrl.includes('anthropic'))
+    if (_config.provider === 'openrouter')
+        return `openrouter/${_config.model}`;
+    if (_config.provider === 'anthropic')
         return `anthropic/${_config.model}`;
     return `openai/${_config.model}`;
 }
@@ -195,7 +215,7 @@ async function enhanceMemory(text, context) {
         type: classifyByKeywords(text),
         intent: text.length > 200 ? text.slice(0, 200) + '...' : text,
         action: text,
-        tags: extractKeywordTags(text),
+        tags: (0, extract_tags_1.extractTags)(text),
     };
     if (!isLLMAvailable() || !_config) {
         return fallback;

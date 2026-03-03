@@ -3,18 +3,18 @@
  * Rate Limiter — Prevents unbounded memory storage per session.
  *
  * Limits:
- * - Max 30 memories stored per session (resets on server restart)
- * - Max 100 auto_learn calls per session
- * - Max 500 total tool calls per session
+ * - Max 100 memories stored per session (resets on server restart)
+ * - Max 500 auto_learn calls per session
+ * - Max 2000 total tool calls per session
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkRateLimit = checkRateLimit;
 exports.getRateLimitStats = getRateLimitStats;
 exports.resetRateLimits = resetRateLimits;
 const LIMITS = {
-    MAX_STORES_PER_SESSION: 30,
-    MAX_AUTO_LEARN_PER_SESSION: 100,
-    MAX_CALLS_PER_SESSION: 500,
+    MAX_STORES_PER_SESSION: 100,
+    MAX_AUTO_LEARN_PER_SESSION: 500,
+    MAX_CALLS_PER_SESSION: 2000,
 };
 let state = {
     storeCount: 0,
@@ -47,6 +47,7 @@ function getRateLimitStats() {
         autoLearnCount: state.autoLearnCount,
         totalCalls: state.totalCalls,
         uptime: Math.floor((Date.now() - state.sessionStart) / 1000),
+        storeLimit: LIMITS.MAX_STORES_PER_SESSION,
     };
 }
 function resetRateLimits() {

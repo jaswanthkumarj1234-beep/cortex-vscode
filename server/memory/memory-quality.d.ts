@@ -10,7 +10,7 @@ import { MemoryType } from '../types';
  * Check if a memory is worth storing.
  * Returns null if good, or a rejection reason if bad.
  */
-export declare function qualityCheck(intent: string, type: string): string | null;
+export declare function qualityCheck(intent: string, _type: string): string | null;
 /**
  * Check if a new memory contradicts existing ones.
  * Returns the contradicting memory if found.

@@ -54,8 +54,8 @@ class ProjectScanner {
     }
     /** Check if project was already scanned */
     isAlreadyScanned() {
-        const existing = this.memoryStore.getByType(types_1.MemoryType.INSIGHT, 10);
-        return existing.some(m => m.intent.startsWith('Project structure'));
+        // Use tag-based check instead of fragile magic string matching
+        return this.memoryStore.findByTag('project-scan', 1).length > 0;
     }
     /** Full project scan — returns number of memories created */
     async scan() {

@@ -140,21 +140,21 @@ class ImportVerifier {
         }
         return Array.from(packages);
     }
+    static NODE_BUILTINS = new Set([
+        'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
+        'crypto', 'dgram', 'dns', 'domain', 'events', 'fs', 'http', 'http2',
+        'https', 'module', 'net', 'os', 'path', 'perf_hooks', 'process',
+        'querystring', 'readline', 'repl', 'stream', 'string_decoder', 'sys',
+        'timers', 'tls', 'tty', 'url', 'util', 'v8', 'vm', 'worker_threads',
+        'zlib', 'diagnostics_channel', 'inspector', 'trace_events',
+        'node:assert', 'node:buffer', 'node:child_process', 'node:crypto',
+        'node:events', 'node:fs', 'node:http', 'node:https', 'node:net',
+        'node:os', 'node:path', 'node:process', 'node:readline', 'node:stream',
+        'node:url', 'node:util', 'node:worker_threads', 'node:zlib',
+        'node:diagnostics_channel', 'node:test',
+    ]);
     isNodeBuiltin(name) {
-        const builtins = new Set([
-            'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
-            'crypto', 'dgram', 'dns', 'domain', 'events', 'fs', 'http', 'http2',
-            'https', 'module', 'net', 'os', 'path', 'perf_hooks', 'process',
-            'querystring', 'readline', 'repl', 'stream', 'string_decoder', 'sys',
-            'timers', 'tls', 'tty', 'url', 'util', 'v8', 'vm', 'worker_threads',
-            'zlib', 'diagnostics_channel', 'inspector', 'trace_events',
-            'node:assert', 'node:buffer', 'node:child_process', 'node:crypto',
-            'node:events', 'node:fs', 'node:http', 'node:https', 'node:net',
-            'node:os', 'node:path', 'node:process', 'node:readline', 'node:stream',
-            'node:url', 'node:util', 'node:worker_threads', 'node:zlib',
-            'node:diagnostics_channel', 'node:test',
-        ]);
-        return builtins.has(name);
+        return ImportVerifier.NODE_BUILTINS.has(name);
     }
     findSimilar(name) {
         const allPkgs = Array.from(this.declaredDeps);

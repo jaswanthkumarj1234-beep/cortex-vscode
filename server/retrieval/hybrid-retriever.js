@@ -10,7 +10,7 @@ class HybridRetriever {
     }
     /** Recall memories relevant to a query */
     async recall(query) {
-        const startTime = Date.now();
+        const _startTime = Date.now();
         const limit = query.maxResults || 20;
         // Run all search methods in parallel
         const [vectorResults, ftsResults, fileResults] = await Promise.all([
@@ -46,9 +46,8 @@ class HybridRetriever {
     }
     async keywordSearch(query, limit) {
         try {
-            // Clean query for FTS5 syntax
-            const ftsQuery = this.cleanFTSQuery(query);
-            return this.memoryStore.searchFTS(ftsQuery, limit);
+            // searchFTS already sanitizes FTS5 special chars internally
+            return this.memoryStore.searchFTS(query, limit);
         }
         catch (err) {
             console.error('[CognitiveMemory] FTS search error:', err);
@@ -105,15 +104,6 @@ class HybridRetriever {
             }
             return true;
         });
-    }
-    /** Clean user query for FTS5 syntax */
-    cleanFTSQuery(query) {
-        // Remove special FTS5 characters, keep words
-        return query
-            .replace(/[^\w\s]/g, ' ')
-            .split(/\s+/)
-            .filter((w) => w.length > 2)
-            .join(' OR ');
     }
 }
 exports.HybridRetriever = HybridRetriever;

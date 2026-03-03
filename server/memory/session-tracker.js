@@ -18,6 +18,7 @@ function startSession() {
         businessRules: [],
         gotchas: [],
         currentTasks: [],
+        project: '',
         autoLearnCount: 0,
         lastUpdateTime: Date.now(),
     };
@@ -30,20 +31,38 @@ function feedSession(data) {
     if (!currentSession)
         startSession();
     const s = currentSession;
+    const MAX_SESSION_ENTRIES = 20;
     if (data.topic)
         s.topics.add(data.topic.toLowerCase().slice(0, 80));
-    if (data.decision)
+    if (data.decision) {
         s.decisions.push(data.decision.slice(0, 150));
+        if (s.decisions.length > MAX_SESSION_ENTRIES)
+            s.decisions.shift();
+    }
     if (data.fileChanged)
         s.filesChanged.add(data.fileChanged);
-    if (data.failedAttempt)
+    if (data.failedAttempt) {
         s.failedAttempts.push(data.failedAttempt.slice(0, 150));
-    if (data.businessRule)
+        if (s.failedAttempts.length > MAX_SESSION_ENTRIES)
+            s.failedAttempts.shift();
+    }
+    if (data.businessRule) {
         s.businessRules.push(data.businessRule.slice(0, 150));
-    if (data.gotcha)
+        if (s.businessRules.length > MAX_SESSION_ENTRIES)
+            s.businessRules.shift();
+    }
+    if (data.gotcha) {
         s.gotchas.push(data.gotcha.slice(0, 150));
-    if (data.currentTask)
+        if (s.gotchas.length > MAX_SESSION_ENTRIES)
+            s.gotchas.shift();
+    }
+    if (data.currentTask) {
         s.currentTasks.push(data.currentTask.slice(0, 150));
+        if (s.currentTasks.length > MAX_SESSION_ENTRIES)
+            s.currentTasks.shift();
+    }
+    if (data.project)
+        s.project = data.project;
     s.autoLearnCount++;
     s.lastUpdateTime = Date.now();
 }
@@ -103,9 +122,8 @@ function endSession(memoryStore) {
 }
 /** Get the last N session summaries for injection at conversation start */
 function getRecentSessions(memoryStore, count = 3) {
-    const sessions = memoryStore.getByType(types_1.MemoryType.CONVERSATION, count * 2)
-        .filter(m => m.tags?.includes('session-summary'))
-        .slice(0, count);
+    // Use SQL-level tag search instead of loading all conversations and filtering in JS
+    const sessions = memoryStore.findByTag('session-summary', count);
     // Cross-session threading — detect topic overlap with current session
     const currentTopics = currentSession ? [...currentSession.topics] : [];
     return sessions.map(s => {

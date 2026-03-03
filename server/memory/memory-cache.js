@@ -21,6 +21,16 @@ function getCached(key) {
     return entry.result;
 }
 function setCache(key, result) {
+    // Proactive stale eviction: sweep expired entries before inserting
+    if (recallCache.size >= config_1.CONFIG.CACHE_MAX) {
+        const now = Date.now();
+        for (const [k, v] of recallCache) {
+            if (now - v.time > config_1.CONFIG.CACHE_TTL) {
+                recallCache.delete(k);
+            }
+        }
+    }
+    // If still full after eviction, remove the oldest entry
     if (recallCache.size >= config_1.CONFIG.CACHE_MAX) {
         const oldest = recallCache.keys().next().value;
         if (oldest)

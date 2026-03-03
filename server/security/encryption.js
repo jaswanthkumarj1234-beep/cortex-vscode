@@ -52,7 +52,7 @@ const os = __importStar(require("os"));
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 const IV_LENGTH = 16;
-const TAG_LENGTH = 16;
+const _TAG_LENGTH = 16;
 const SALT = 'cortex-memory-salt-v1';
 // Derive key from machine-specific info (hostname + username + homedir hash)
 function deriveKey() {

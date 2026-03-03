@@ -8,35 +8,31 @@ exports.formatPlanStatus = formatPlanStatus;
 /**
  * Feature Gate — Enforces free/trial/paid limits based on license.
  *
- * FREE plan limits:
- *   - Max 20 active memories
- *   - Basic recall only (no brain layers)
- *   - No auto-learn
- *   - No export map / architecture graph
- *   - No git memory
- *   - No contradiction detection
- *   - No confidence decay
+ * LAUNCH MODE: All features unlocked for everyone!
+ * When ready to add pricing, revert FREE_LIMITS to restricted values.
  *
  * TRIAL plan: Same as PRO for 7 days after sign-up.
  * PRO plan:   Everything unlocked, unlimited.
  */
 const license_1 = require("./license");
 const DASHBOARD_URL = `${process.env.CORTEX_API_URL || 'https://cortex-ai-iota.vercel.app'}/dashboard`;
+// LAUNCH MODE — All features unlocked for free users
+// To re-enable limits later, change these values back to restricted ones
 const FREE_LIMITS = {
-    maxMemories: 20,
-    brainLayers: false,
-    autoLearn: false,
-    exportMap: false,
-    architectureGraph: false,
-    gitMemory: false,
-    contradictionDetection: false,
-    confidenceDecay: false,
-    memoryConsolidation: false,
-    attentionRanking: false,
-    anticipation: false,
-    knowledgeGaps: false,
-    temporalContext: false,
-    crossSessionThreading: false,
+    maxMemories: Infinity,
+    brainLayers: true,
+    autoLearn: true,
+    exportMap: true,
+    architectureGraph: true,
+    gitMemory: true,
+    contradictionDetection: true,
+    confidenceDecay: true,
+    memoryConsolidation: true,
+    attentionRanking: true,
+    anticipation: true,
+    knowledgeGaps: true,
+    temporalContext: true,
+    crossSessionThreading: true,
 };
 const PRO_LIMITS = {
     maxMemories: Infinity,
@@ -91,7 +87,7 @@ function getUpgradeMessage(feature) {
 /** Format plan status for display */
 function formatPlanStatus() {
     const license = (0, license_1.getLicense)();
-    const limits = getFeatureLimits();
+    const _limits = getFeatureLimits();
     if (license.plan === 'PRO') {
         return `[PRO] Cortex PRO — All features unlocked, unlimited memories.`;
     }
@@ -99,6 +95,6 @@ function formatPlanStatus() {
         const trialMsg = (0, license_1.getTrialStatus)();
         return `[TRIAL] Cortex Trial — All PRO features active. ${trialMsg || ''}`;
     }
-    return `[FREE] Cortex Free — ${limits.maxMemories} memories, basic features. Upgrade: ${DASHBOARD_URL}`;
+    return `[FREE] Cortex — All features unlocked. Launch edition 🚀`;
 }
 //# sourceMappingURL=feature-gate.js.map

@@ -16,6 +16,7 @@ export interface SessionData {
     businessRules: string[];
     gotchas: string[];
     currentTasks: string[];
+    project: string;
     autoLearnCount: number;
     lastUpdateTime: number;
 }
@@ -30,6 +31,7 @@ export declare function feedSession(data: {
     businessRule?: string;
     gotcha?: string;
     currentTask?: string;
+    project?: string;
     type?: string;
 }): void;
 /** Build and store the session summary */

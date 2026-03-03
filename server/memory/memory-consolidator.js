@@ -27,17 +27,19 @@ function consolidateMemories(memoryStore) {
             // Create merged memory
             const merged = createMergedMemory(group, type);
             const newMemory = memoryStore.add(merged);
-            // Deactivate originals, link to merged
-            for (const old of group.memories) {
-                memoryStore.deactivate(old.id, newMemory.id);
-                memoryStore.addEdge({
-                    sourceId: old.id,
-                    targetId: newMemory.id,
-                    relation: types_1.EdgeRelation.REPLACED_BY,
-                    weight: 0.9,
-                    timestamp: Date.now(),
-                });
-            }
+            // Wrap all deactivations + edge creation in a transaction
+            memoryStore.runTransaction(() => {
+                for (const old of group.memories) {
+                    memoryStore.deactivate(old.id, newMemory.id);
+                    memoryStore.addEdge({
+                        sourceId: old.id,
+                        targetId: newMemory.id,
+                        relation: types_1.EdgeRelation.REPLACED_BY,
+                        weight: 0.9,
+                        timestamp: Date.now(),
+                    });
+                }
+            });
             mergeCount++;
         }
     }
@@ -56,6 +58,9 @@ function findSimilarGroups(memories) {
             if (used.has(memories[j].id))
                 continue;
             const wordsJ = tokenize(memories[j].intent);
+            // Skip dedup for very short memories (< 5 words) — Jaccard false positives
+            if (wordsI.length < 5 || wordsJ.length < 5)
+                continue;
             const similarity = jaccardSimilarity(wordsI, wordsJ);
             if (similarity > 0.5) { // 50% word overlap = similar enough
                 group.push(memories[j]);
@@ -141,13 +146,14 @@ function jaccardSimilarity(a, b) {
     const union = setA.size + setB.size - intersection;
     return union === 0 ? 0 : intersection / union;
 }
+// Module-level constant (not re-created per call)
+const CONSOLIDATOR_STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'was', 'are', 'were', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'it', 'this', 'that', 'and', 'or', 'but']);
 /** Tokenize text into lowercase words */
 function tokenize(text) {
-    const stopWords = new Set(['the', 'a', 'an', 'is', 'was', 'are', 'were', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'it', 'this', 'that', 'and', 'or', 'but']);
     return text.toLowerCase()
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
-        .filter(w => w.length > 2 && !stopWords.has(w));
+        .filter(w => w.length > 2 && !CONSOLIDATOR_STOP_WORDS.has(w));
 }
 /** Check if consolidation should run (e.g., after force_recall) */
 function shouldConsolidate(memoryStore) {

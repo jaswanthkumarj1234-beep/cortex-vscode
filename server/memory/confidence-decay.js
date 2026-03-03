@@ -38,17 +38,21 @@ function applyConfidenceDecay(memories) {
 }
 /** Run periodic maintenance — decay old, unused memories */
 function runDecayMaintenance(memoryStore) {
-    const active = memoryStore.getActive(500);
+    // Target only memories with 0 access older than 1 day (most likely to need decay)
+    const DAY = 24 * 60 * 60 * 1000;
+    const active = memoryStore.getStaleMemories(DAY, 500);
     let decayed = 0;
-    for (const m of active) {
-        const current = m.importance;
-        const effective = effectiveImportance(current, m.timestamp, m.accessCount, m.lastAccessed);
-        // Only update if significant change (>5% difference)
-        if (Math.abs(current - effective) > 0.05) {
-            memoryStore.update(m.id, { importance: effective });
-            decayed++;
+    memoryStore.runTransaction(() => {
+        for (const m of active) {
+            const current = m.importance;
+            const effective = effectiveImportance(current, m.timestamp, m.accessCount, m.lastAccessed);
+            // Only update if significant change (>5% difference)
+            if (Math.abs(current - effective) > 0.05) {
+                memoryStore.update(m.id, { importance: effective });
+                decayed++;
+            }
         }
-    }
+    });
     return decayed;
 }
 //# sourceMappingURL=confidence-decay.js.map

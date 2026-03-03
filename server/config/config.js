@@ -18,7 +18,7 @@ exports.CONFIG = {
     // Memory decay
     INSIGHT_MAX_AGE_DAYS: 30,
     UNUSED_MAX_AGE_DAYS: 60,
-    MEMORY_CAP: 500,
+    MEMORY_CAP: 5000,
     // Cache
     CACHE_TTL: 60_000, // 1 minute
     CACHE_MAX: 50,

@@ -9,8 +9,25 @@ export declare class MemoryStore {
     private touchStmt;
     private insertEdgeStmt;
     private insertVectorStmt;
+    private getActiveStmt;
+    private getByTypeStmt;
+    private getByFileStmt;
+    private searchFTSStmt;
+    private findByTagStmt;
+    private getByTimestampRangeStmt;
+    private getByDirectoryStmt;
+    private getStaleStmt;
+    private getLeastImportantStmt;
+    private activeCountStmt;
+    private totalCountStmt;
+    private findDuplicateStmt;
+    private getEdgesFromStmt;
+    private getEdgesToStmt;
     private vectors;
+    private _transaction;
     constructor(database: CognitiveDatabase);
+    /** Run multiple operations in a single SQLite transaction (10-100x faster for bulk writes) */
+    runTransaction(fn: () => void): void;
     /** Create a new memory unit (with deduplication) */
     add(memory: Partial<MemoryUnit> & {
         type: MemoryType;
@@ -19,8 +36,8 @@ export declare class MemoryStore {
     }): MemoryUnit;
     /**
      * Find a duplicate memory by type + intent similarity.
-     * Uses word-overlap (Jaccard similarity) — no ML needed.
-     * Returns existing memory if similarity > 0.7, else undefined.
+     * Uses HYBRID approach: Jaccard word-overlap + cosine similarity (when vectors available).
+     * Returns existing memory if similarity > threshold, else undefined.
      */
     private findDuplicate;
     /** Tokenize text into lowercase words (stop-word filtered) */
@@ -39,7 +56,7 @@ export declare class MemoryStore {
     getByType(type: MemoryType, limit?: number): MemoryUnit[];
     /** Get memories related to a file */
     getByFile(filePath: string, limit?: number): MemoryUnit[];
-    /** Full-text search via FTS5 */
+    /** Full-text search via FTS5 (with query sanitization) */
     searchFTS(query: string, limit?: number): ScoredMemory[];
     /** Store a vector embedding */
     storeVector(id: string, embedding: Float32Array): void;
@@ -55,6 +72,16 @@ export declare class MemoryStore {
     getEdgesTo(targetId: string): GraphEdge[];
     /** Graph traversal — find related memories within N hops */
     getRelated(memoryId: string, maxHops?: number, limit?: number): ScoredMemory[];
+    /** Find active memories by tag (SQL LIKE on JSON tags column) */
+    findByTag(tag: string, limit?: number): MemoryUnit[];
+    /** Get active memories within a timestamp range */
+    getActiveByTimestampRange(start: number, end: number, limit?: number): MemoryUnit[];
+    /** Get active memories related to files in a directory (SQL LIKE prefix) */
+    getByDirectory(dirPrefix: string, limit?: number): MemoryUnit[];
+    /** Get active memories with 0 access older than a given age */
+    getStaleMemories(maxAgeMs: number, limit?: number): MemoryUnit[];
+    /** Get active memories sorted by importance ASC (for cap enforcement) */
+    getLeastImportant(limit: number): MemoryUnit[];
     /** Total active memories */
     activeCount(): number;
     /** Total memories (including inactive) */

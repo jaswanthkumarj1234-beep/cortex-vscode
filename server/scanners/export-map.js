@@ -87,8 +87,8 @@ function buildExportMap(workspaceRoot) {
 function storeExportMap(memoryStore, exportMap) {
     if (exportMap.totalExports === 0)
         return 0;
-    // Remove previous export map memories
-    const existing = memoryStore.getActive(500).filter(m => m.tags?.includes('export-map'));
+    // Remove previous export map memories (SQL tag search instead of JS filter)
+    const existing = memoryStore.findByTag('export-map', 500);
     for (const m of existing) {
         try {
             memoryStore.deactivate(m.id, 'export-map-refresh');

@@ -3,7 +3,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.captureGitCommits = captureGitCommits;
 exports.detectFileChanges = detectFileChanges;
 exports.formatFileChanges = formatFileChanges;
+/**
+ * Git Memory — Auto-captures code changes from git history.
+ *
+ * On each session start (force_recall), this module:
+ * 1. Reads recent git commits and stores them as memories
+ * 2. Tracks file changes (new/deleted/modified) since last session
+ * 3. Captures commit messages as DECISION/BUG_FIX based on keywords
+ *
+ * This solves the "what code changed and why?" gap that exists when
+ * files change outside the AI conversation.
+ */
+const child_process_1 = require("child_process");
 const types_1 = require("../types");
+const extract_tags_1 = require("../utils/extract-tags");
 // Track the last processed commit hash to avoid duplicates
 let lastProcessedCommit = null;
 /** Capture recent git commits as memories */
@@ -11,9 +24,9 @@ function captureGitCommits(memoryStore, workspaceRoot, maxCommits = 5) {
     if (!workspaceRoot)
         return 0;
     try {
-        const { execSync } = require('child_process');
+        // execSync imported at module level
         // Get recent commits with file changes
-        const gitLog = execSync(`git log --oneline --name-only -${maxCommits} --no-merges 2>nul`, { cwd: workspaceRoot, encoding: 'utf-8', timeout: 5000 }).trim();
+        const gitLog = (0, child_process_1.execSync)(`git log --oneline --name-only -${maxCommits} --no-merges 2>nul`, { cwd: workspaceRoot, encoding: 'utf-8', timeout: 5000 }).trim();
         if (!gitLog)
             return 0;
         const commits = parseGitLog(gitLog);
@@ -25,8 +38,8 @@ function captureGitCommits(memoryStore, workspaceRoot, maxCommits = 5) {
             // Classify commit type based on message
             const type = classifyCommit(commit.message);
             // Check for duplicate — skip if already stored
-            const existing = memoryStore.getActive(200).find(m => m.tags?.includes(`commit:${commit.hash}`));
-            if (existing)
+            const existing = memoryStore.findByTag(`commit:${commit.hash}`, 1);
+            if (existing.length > 0)
                 continue;
             memoryStore.add({
                 type,
@@ -35,7 +48,7 @@ function captureGitCommits(memoryStore, workspaceRoot, maxCommits = 5) {
                     ? `Changed: ${commit.filesChanged.slice(0, 5).join(', ')}`
                     : commit.message,
                 reason: 'Auto-captured from git history',
-                tags: ['git-commit', `commit:${commit.hash}`, ...extractTopicTags(commit.message)],
+                tags: ['git-commit', `commit:${commit.hash}`, ...(0, extract_tags_1.extractTags)(commit.message)],
                 relatedFiles: commit.filesChanged.slice(0, 10),
                 confidence: 0.8,
                 importance: type === types_1.MemoryType.BUG_FIX ? 0.85 : 0.6,
@@ -62,9 +75,9 @@ function detectFileChanges(workspaceRoot) {
     if (!workspaceRoot)
         return report;
     try {
-        const { execSync } = require('child_process');
+        // execSync imported at module level
         // Get uncommitted changes (working tree vs HEAD)
-        const status = execSync('git status --porcelain 2>nul', {
+        const status = (0, child_process_1.execSync)('git status --porcelain 2>nul', {
             cwd: workspaceRoot,
             encoding: 'utf-8',
             timeout: 5000,
@@ -155,24 +168,5 @@ function classifyCommit(message) {
     if (/\b(doc|readme|comment|note)\b/.test(lower))
         return types_1.MemoryType.INSIGHT;
     return types_1.MemoryType.DECISION;
-}
-function extractTopicTags(message) {
-    const tags = [];
-    const lower = message.toLowerCase();
-    const patterns = [
-        [/\b(auth|login|session|token|jwt)\b/, 'auth'],
-        [/\b(database|sql|query|migration)\b/, 'database'],
-        [/\b(api|endpoint|route)\b/, 'api'],
-        [/\b(ui|component|style|css)\b/, 'ui'],
-        [/\b(test|spec|coverage)\b/, 'testing'],
-        [/\b(deploy|ci|docker)\b/, 'devops'],
-        [/\b(security|permission)\b/, 'security'],
-        [/\b(perf|cache|optimize)\b/, 'performance'],
-    ];
-    for (const [pattern, tag] of patterns) {
-        if (pattern.test(lower))
-            tags.push(tag);
-    }
-    return tags;
 }
 //# sourceMappingURL=git-memory.js.map
