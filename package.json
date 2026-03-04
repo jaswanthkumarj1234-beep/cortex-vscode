@@ -2,7 +2,7 @@
     "name": "cortex-memory",
     "displayName": "Cortex — AI Memory",
     "description": "Persistent memory for AI coding assistants. Browse, search, and manage your Cortex memories directly from VS Code. Bundled server — no npm install needed.",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "publisher": "cortex-ai-memory",
     "author": "Perla Jaswanth Kumar",
     "license": "MIT",
